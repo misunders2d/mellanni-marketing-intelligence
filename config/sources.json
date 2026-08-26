@@ -1,0 +1,107 @@
+{
+  "sources": [
+    {
+      "slug": "marketplace-pulse",
+      "name": "Marketplace Pulse",
+      "home_url": "https://www.marketplacepulse.com/",
+      "priority": "A",
+      "why": "Independent, data-driven Amazon and marketplace structural changes.",
+      "include_patterns": ["/articles/", "/news/"]
+    },
+    {
+      "slug": "practical-ecommerce",
+      "name": "Practical Ecommerce",
+      "home_url": "https://www.practicalecommerce.com/",
+      "priority": "A",
+      "why": "Practical ecommerce, paid media, CRO, analytics, AI, and operator tactics.",
+      "include_patterns": []
+    },
+    {
+      "slug": "dtc-newsletter",
+      "name": "DTC Newsletter",
+      "home_url": "https://www.directtoconsumer.co/newsletters",
+      "priority": "A",
+      "why": "Tactical DTC creative, attribution, lifecycle, landing-page, and channel experiments.",
+      "include_patterns": ["/newsletter", "/blogs/"]
+    },
+    {
+      "slug": "nik-sharma",
+      "name": "Nik Sharma Newsletter",
+      "home_url": "https://subscribe.nik.co/",
+      "priority": "A",
+      "why": "Active operator lessons on offers, conversion, creative, launches, and channel mix.",
+      "include_patterns": [],
+      "allowed_hosts": [".nik.co"]
+    },
+    {
+      "slug": "sell-on-amazon",
+      "name": "Sell on Amazon Announcements",
+      "home_url": "https://sell.amazon.com/blog/announcements",
+      "priority": "A",
+      "why": "First-party Seller Central, FBA, product, and policy announcements.",
+      "include_patterns": ["/blog/"]
+    },
+    {
+      "slug": "amazon-ads-news",
+      "name": "Amazon Ads What's New",
+      "home_url": "https://advertising.amazon.com/library/newsroom",
+      "priority": "A",
+      "why": "First-party Amazon Ads, DSP, AMC, targeting, creative, and measurement updates.",
+      "include_patterns": ["/library/news/"]
+    },
+    {
+      "slug": "marketing-operators",
+      "name": "Marketing Operators",
+      "home_url": "https://www.9operators.com/podcast/marketing-operators",
+      "priority": "A",
+      "why": "Hands-on ecommerce growth and experimentation by active operators.",
+      "include_patterns": ["/episodes/"],
+      "allowed_hosts": ["portal.9operators.com"]
+    },
+    {
+      "slug": "nine-operators",
+      "name": "9 Operators",
+      "home_url": "https://www.9operators.com/podcast/nine-operators",
+      "priority": "A",
+      "why": "Scaling, category expansion, org design, and operating decisions from ecommerce leaders.",
+      "include_patterns": ["/episodes/"],
+      "allowed_hosts": ["portal.9operators.com"]
+    },
+    {
+      "slug": "limited-supply",
+      "name": "Limited Supply",
+      "home_url": "https://visit.nik.co/limited-supply/",
+      "priority": "A",
+      "why": "DTC founder and operator discussion on offers, economics, creative, and brand strategy.",
+      "include_patterns": ["limited-supply"],
+      "feed_urls": ["https://feeds.megaphone.fm/limited-supply"]
+    },
+    {
+      "slug": "ppc-den",
+      "name": "The PPC Den",
+      "home_url": "https://www.adbadger.com/category/podcast/",
+      "priority": "A",
+      "why": "Executable Amazon PPC structures, measurement, and optimization tactics.",
+      "include_patterns": ["/podcast/"],
+      "feed_urls": ["https://www.adbadger.com/category/podcast/feed/"]
+    },
+    {
+      "slug": "seller-sessions",
+      "name": "Seller Sessions",
+      "home_url": "https://sellersessions.com/podcast/",
+      "priority": "A",
+      "why": "Experimental Amazon conversion, ranking, listing, data, and AI workflows.",
+      "include_patterns": ["/podcast/"],
+      "feed_urls": ["https://sellersessions.libsyn.com/rss"],
+      "allowed_hosts": ["sellersessions.libsyn.com"]
+    },
+    {
+      "slug": "smartest-amazon-seller",
+      "name": "The Smartest Amazon Seller",
+      "home_url": "https://scottneedham.podbean.com/",
+      "priority": "A",
+      "why": "Amazon operator and data perspective on category strategy and marketplace economics.",
+      "include_patterns": ["/e/"]
+    }
+  ]
+}
