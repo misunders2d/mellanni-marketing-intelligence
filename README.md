@@ -23,6 +23,17 @@ PYTHONPATH=src python -m mellanni_marketing_intelligence --source seller-session
 
 Default output lives under ignored `journal/`. Source extracts are local artifacts and remain untracked.
 
+## Manifest observability
+
+New runs use additive manifest schema v2. Existing fields keep their original names and meanings. V2 adds:
+
+- exact run parameters and source-config SHA-256;
+- per-source warnings, feed candidate totals, actual probe count, and truncation count;
+- an explicit HTML fallback reason;
+- a run-level warning count.
+
+Feed probing stays sequential and bounded. Explicit `feed_urls` are always eligible to run unless an earlier candidate succeeds. Discovered and common feed candidates share the remaining `max_feed_candidates` budget, which defaults to 8. Any truncation is recorded in source warnings.
+
 ## Tests
 
 ```bash

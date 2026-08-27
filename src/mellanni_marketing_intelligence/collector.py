@@ -207,16 +207,25 @@ def _index_entries(source: Source, document: str) -> tuple[list[_RawEntry], list
     return entries, parser.feed_urls
 
 
-def _feed_candidates(source: Source, discovered: list[str]) -> list[str]:
-    parsed = urllib.parse.urlsplit(source.home_url)
-    origin = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/", "", ""))
-    common = [urllib.parse.urljoin(origin, value) for value in ("feed", "feed/", "rss", "rss.xml", "feed.xml")]
+def _dedupe_urls(urls: tuple[str, ...] | list[str]) -> list[str]:
     result: list[str] = []
-    for url in (*source.feed_urls, *discovered, *common):
+    for url in urls:
         clean = canonical_url(url)
         if clean not in result:
             result.append(clean)
-    return result[:8]
+    return result
+
+
+def _feed_candidates(source: Source, discovered: list[str]) -> tuple[list[str], int, int]:
+    parsed = urllib.parse.urlsplit(source.home_url)
+    origin = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/", "", ""))
+    common = [urllib.parse.urljoin(origin, value) for value in ("feed", "feed/", "rss", "rss.xml", "feed.xml")]
+    explicit = _dedupe_urls(source.feed_urls)
+    rest = [url for url in _dedupe_urls([*discovered, *common]) if url not in explicit]
+    total = len(explicit) + len(rest)
+    budget = max(0, source.max_feed_candidates - len(explicit))
+    candidates = [*explicit, *rest[:budget]]
+    return candidates, total, total - len(candidates)
 
 
 def _within_window(published_at: str | None, cutoff: datetime) -> bool:
@@ -229,16 +238,28 @@ def collect_source(source: Source, since_days: int, fetcher: Fetch = fetch_url) 
     status = SourceStatus(slug=source.slug, name=source.name)
     cutoff = datetime.now(UTC) - timedelta(days=since_days)
     home_document = ""
+    home_fetch_failed = False
     try:
         home_document, _ = fetcher(source.home_url)
     except Exception as exc:  # explicit feeds can still keep source operational
+        home_fetch_failed = True
         status.errors.append(f"home fetch failed: {type(exc).__name__}: {exc}")
 
     index_entries, discovered_feeds = _index_entries(source, home_document) if home_document else ([], [])
     entries: list[_RawEntry] = []
     explicit_feeds = {canonical_url(url) for url in source.feed_urls}
-    probe_errors: list[str] = []
-    for feed_url in _feed_candidates(source, discovered_feeds):
+    feed_candidates, feed_candidates_total, feed_candidates_truncated = _feed_candidates(source, discovered_feeds)
+    status.feed_candidates_total = feed_candidates_total
+    status.feed_candidates_truncated = feed_candidates_truncated
+    if feed_candidates_truncated:
+        status.warnings.append(
+            f"feed candidate limit skipped {feed_candidates_truncated} of {feed_candidates_total} candidate(s)"
+        )
+
+    probe_error_count = 0
+    probe_empty_count = 0
+    for feed_url in feed_candidates:
+        status.feed_candidates_probed += 1
         try:
             feed_document, _ = fetcher(feed_url)
             candidate_entries = parse_feed(feed_document, feed_url)
@@ -249,18 +270,28 @@ def collect_source(source: Source, since_days: int, fetcher: Fetch = fetch_url) 
                     if any(pattern.lower() in entry.url.lower() for pattern in source.include_patterns)
                 ]
         except Exception as exc:  # feed candidates are expected to vary
-            probe_errors.append(f"feed candidate failed {feed_url}: {type(exc).__name__}: {exc}")
+            probe_error_count += 1
+            status.warnings.append(f"feed candidate failed {feed_url}: {type(exc).__name__}: {exc}")
             continue
         if candidate_entries:
             entries = candidate_entries
             status.method = f"feed:{feed_url}"
             break
+        probe_empty_count += 1
+        status.warnings.append(f"feed candidate returned no entries {feed_url}")
 
     if not entries:
         entries = index_entries
         status.method = "html-index"
-        if not entries:
-            status.errors.extend(probe_errors[-2:])
+        status.fallback_reason = (
+            f"home_fetch={'failed' if home_fetch_failed else 'ok'}; "
+            f"feed_probes={status.feed_candidates_probed}; "
+            f"feed_errors={probe_error_count}; "
+            f"feed_empty={probe_empty_count}; "
+            f"html_index={'used' if entries else 'empty'}"
+        )
+        if not entries and probe_error_count:
+            status.errors.append(f"no usable feed or index; {probe_error_count} feed probe(s) failed (see warnings)")
 
     status.discovered = len(entries)
     accepted: list[ContentItem] = []

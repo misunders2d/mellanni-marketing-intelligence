@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,6 +45,7 @@ def run_fetch(
     run_dir = journal_root / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
 
+    config_sha256 = hashlib.sha256(config_path.read_bytes()).hexdigest()
     sources = load_sources(config_path)
     if source_slugs:
         requested = set(source_slugs)
@@ -61,12 +63,21 @@ def run_fetch(
 
     source_failures = sum(1 for status in statuses if status.accepted == 0 and status.errors)
     manifest: dict[str, Any] = {
+        "schema_version": 2,
         "run_id": run_id,
         "started_at": started.isoformat(),
         "finished_at": datetime.now(UTC).isoformat(),
         "journal_dir": str(run_dir.resolve()),
         "source_count": len(sources),
         "source_failures": source_failures,
+        "warning_count": sum(len(status.warnings) for status in statuses),
+        "run_params": {
+            "since_days": since_days,
+            "fetch_workers": fetch_workers,
+            "source_slugs": list(source_slugs),
+            "config_path": str(config_path.resolve()),
+            "config_sha256": config_sha256,
+        },
         "item_count": len(items),
         "items": item_records,
         "source_statuses": [status.to_dict() for status in statuses],

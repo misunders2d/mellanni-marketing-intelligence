@@ -30,6 +30,7 @@ def load_sources(path: Path) -> list[Source]:
                 allowed_hosts=tuple(str(value).lower() for value in row.get("allowed_hosts", [])),
                 feed_urls=tuple(str(value) for value in row.get("feed_urls", [])),
                 max_items=int(row.get("max_items", 5)),
+                max_feed_candidates=int(row.get("max_feed_candidates", 8)),
             )
         )
     return sources

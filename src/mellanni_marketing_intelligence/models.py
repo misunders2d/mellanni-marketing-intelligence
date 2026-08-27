@@ -15,6 +15,7 @@ class Source:
     allowed_hosts: tuple[str, ...] = ()
     feed_urls: tuple[str, ...] = ()
     max_items: int = 5
+    max_feed_candidates: int = 8
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,11 @@ class SourceStatus:
     discovered: int = 0
     accepted: int = 0
     errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    feed_candidates_total: int = 0
+    feed_candidates_probed: int = 0
+    feed_candidates_truncated: int = 0
+    fallback_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
