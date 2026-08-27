@@ -22,9 +22,11 @@ additional_redirect_urls = [
   "https://mellanni-marketing-insights.vercel.app/admin",
   "http://127.0.0.1:3000/**",
 ]
+enable_signup = false
 enable_anonymous_sign_ins = false
 
 [auth.email]
+enable_signup = false
 double_confirm_changes = true
 enable_confirmations = true
 max_frequency = "1m"

@@ -1,5 +1,12 @@
 # Mellanni Marketing Intelligence
 
+This is one repository: Python collection and content tools live at root, the
+Next.js publication site lives in `website/`, and Supabase schema/config lives
+in `supabase/`.
+
+Agents working in this repository must read `AGENTS.md` and the linked
+`mellanni-marketing-operator` project skill before operating live content.
+
 Fetch-only pipeline for Plane project `MKT-1`:
 
 1. Collect recent items from the 12-source pilot registry.
@@ -45,7 +52,7 @@ Optional focus question follows the URL. Model overrides use `YOUTUBE_SUMMARIZER
 
 Supabase is the live source of truth for enabled sources, draft/published digests, and run records. The checked-in `config/sources.json` remains an offline fixture.
 
-Local runner credentials belong only in ignored root `.env`:
+Runner first reads ignored root `.env` when explicit credentials are supplied:
 
 ```dotenv
 SUPABASE_URL=https://PROJECT_REF.supabase.co
@@ -53,6 +60,10 @@ SUPABASE_SECRET_KEY=your-secret-key
 ```
 
 Never put the secret key in `website/`, Vercel, client code, logs, or chat. Website/browser access uses only the publishable key plus Row Level Security.
+
+On the Mellanni workstation, the runner otherwise reads the approved company
+Supabase CLI profile at `~/.config/supabase/company` and keeps the retrieved key
+in process memory only. Access to that profile is the authorization boundary.
 
 Export enabled sources into the existing fetcher format:
 
