@@ -7,7 +7,7 @@ Fetch-only pipeline for Plane project `MKT-1`:
 3. Write one Markdown file per item under ignored local `journal/<run>/`.
 4. Write a machine-readable manifest with source health and item paths.
 
-This repo does not start agents, score content, summarize findings, render HTML, schedule jobs, or deliver messages. Sergey asks Codex to analyze a journal run separately.
+The fetch pipeline does not start agents, score content, summarize findings, schedule jobs, or deliver messages. The YouTube helper below runs only when explicitly invoked.
 
 ## Manual run
 
@@ -22,6 +22,24 @@ PYTHONPATH=src python -m mellanni_marketing_intelligence --source seller-session
 ```
 
 Default output lives under ignored `journal/`. Source extracts are local artifacts and remain untracked.
+
+## YouTube summarizer
+
+The standalone helper preserves the existing Pi Gemini YouTube summarizer's model defaults, fallback, URL validation, prompt, and multimodal request.
+
+Put the API key in local ignored `.env`:
+
+```dotenv
+GOOGLE_API_KEY=your-key
+```
+
+Run:
+
+```bash
+node --env-file=.env scripts/youtube-summary.mjs "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+Optional focus question follows the URL. Model overrides use `YOUTUBE_SUMMARIZER_MODEL` and `YOUTUBE_SUMMARIZER_FALLBACK_MODEL`.
 
 ## Manifest observability
 
