@@ -94,6 +94,10 @@ def fetch_enabled_sources(base_url: str, key: str) -> list[dict[str, Any]]:
     )
     if not isinstance(rows, list):
         raise RuntimeError("Supabase sources response was not a list")
+    if not rows:
+        raise RuntimeError(
+            "Supabase returned no enabled sources; check source configuration and runner credentials"
+        )
     return rows
 
 
@@ -230,6 +234,10 @@ def build_parser() -> argparse.ArgumentParser:
     push_parser.add_argument("--input", type=Path, required=True)
     push_parser.add_argument("--manifest", type=Path)
     push_parser.add_argument("--publish", action="store_true")
+
+    run_parser = subparsers.add_parser("record-run")
+    run_parser.add_argument("--manifest", type=Path, required=True)
+    run_parser.add_argument("--digest-id")
     return parser
 
 
@@ -245,6 +253,21 @@ def main(argv: list[str] | None = None) -> int:
                 encoding="utf-8",
             )
             print(json.dumps({"source_count": len(config["sources"]), "output": str(args.output)}))
+            return 0
+
+        if args.command == "record-run":
+            manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+            record_run(base_url, key, manifest, digest_id=args.digest_id)
+            print(
+                json.dumps(
+                    {
+                        "status": "recorded",
+                        "run_status": "succeeded"
+                        if int(manifest.get("exit_code", 1)) == 0
+                        else "failed",
+                    }
+                )
+            )
             return 0
 
         document = json.loads(args.input.read_text(encoding="utf-8"))

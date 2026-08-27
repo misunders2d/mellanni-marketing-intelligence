@@ -94,6 +94,10 @@ revoke all on table public.sources from anon, authenticated;
 revoke all on table public.digests from anon, authenticated;
 revoke all on table public.runs from anon, authenticated;
 
+grant select on table public.sources to service_role;
+grant select, insert, update on table public.digests to service_role;
+grant insert on table public.runs to service_role;
+
 grant select, insert, update, delete on table public.sources to authenticated;
 grant select on table public.digests to anon, authenticated;
 grant insert, update, delete on table public.digests to authenticated;

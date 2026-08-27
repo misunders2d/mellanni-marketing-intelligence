@@ -1,14 +1,32 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from mellanni_marketing_intelligence.supabase_content import (
+    build_parser,
     digest_to_row,
+    fetch_enabled_sources,
     source_rows_to_config,
 )
 
 
 class SupabaseContentTests(unittest.TestCase):
+    @patch("mellanni_marketing_intelligence.supabase_content._request_json", return_value=[])
+    def test_empty_enabled_source_list_is_an_error(self, request_json) -> None:
+        with self.assertRaisesRegex(RuntimeError, "no enabled sources"):
+            fetch_enabled_sources("https://example.supabase.co", "sb_secret_example")
+
+        request_json.assert_called_once()
+
+    def test_record_run_is_independent_of_digest_push(self) -> None:
+        args = build_parser().parse_args(
+            ["record-run", "--manifest", "journal/example/manifest.json"]
+        )
+
+        self.assertEqual(args.command, "record-run")
+        self.assertIsNone(args.digest_id)
+
     def test_source_rows_match_fetcher_config_shape(self) -> None:
         config = source_rows_to_config([
             {

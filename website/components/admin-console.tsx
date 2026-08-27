@@ -221,7 +221,10 @@ export function AdminConsole() {
       <section className="admin-panel empty-state" aria-labelledby="admin-config-title">
         <p className="eyebrow">Configuration required</p>
         <h2 id="admin-config-title">Connect this site to Supabase.</h2>
-        <p>Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.</p>
+        <p className="configuration-help">
+          Set <code>NEXT_PUBLIC_<wbr />SUPABASE_<wbr />URL</code> and{" "}
+          <code>NEXT_PUBLIC_<wbr />SUPABASE_<wbr />PUBLISHABLE_<wbr />KEY</code>.
+        </p>
       </section>
     );
   }

@@ -77,6 +77,15 @@ PYTHONPATH=src python -m mellanni_marketing_intelligence.supabase_content \
 
 Add `--manifest journal/<run>/manifest.json` to attach the run record. Add `--publish` only for an explicitly approved direct publication; normal flow is draft first, then publish from `/admin`.
 
+Record any collection run independently, including failures that never produce a digest:
+
+```bash
+PYTHONPATH=src python -m mellanni_marketing_intelligence.supabase_content \
+  record-run --manifest journal/<run>/manifest.json
+```
+
+Use `--digest-id UUID` only when a digest was created separately and should be linked to that run.
+
 The website needs only:
 
 ```dotenv
