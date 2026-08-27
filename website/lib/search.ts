@@ -31,6 +31,17 @@ export function indexDigest(digest: Digest): IndexedDigest {
     { text: normalize(digest.summary), weight: 6 },
     ...digest.topics.map((topic) => ({ text: normalize(topic), weight: 7 })),
     ...digest.findings.map((finding) => ({ text: normalize(finding), weight: 4 })),
+    ...digest.actions.flatMap((action) => [
+      { text: normalize(action.title), weight: 7 },
+      { text: normalize(action.externalSignal), weight: 5 },
+      { text: normalize(action.guidance), weight: 6 },
+      { text: normalize(action.mellanniEvidence.conclusion), weight: 4 },
+    ]),
+    ...digest.signals.flatMap((signal) => [
+      { text: normalize(signal.title), weight: 7 },
+      { text: normalize(signal.externalSignal), weight: 5 },
+      { text: normalize(signal.whyItMatters), weight: 5 },
+    ]),
     ...digest.sources.map((source) => ({ text: normalize(source.name), weight: 5 })),
   ];
 

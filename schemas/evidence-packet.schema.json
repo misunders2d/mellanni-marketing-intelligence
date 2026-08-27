@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mellanni.com/schemas/marketing-evidence-packet-v1.json",
+  "title": "Private Mellanni Marketing Intelligence evidence packet",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "signals",
+    "sources",
+    "priorDigestFindings",
+    "memoryBatch",
+    "memoryRecords",
+    "memoryReconciliations",
+    "mellanniQueries",
+    "skillInventory"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/signal" }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "priorDigestFindings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/priorFinding" }
+    },
+    "memoryBatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skillUri", "queries"],
+      "properties": {
+        "skillUri": { "const": "mellanni://skills/professional-memory-search" },
+        "queries": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nonEmpty" }
+        }
+      }
+    },
+    "memoryRecords": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/memoryRecord" }
+    },
+    "memoryReconciliations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/memoryReconciliation" }
+    },
+    "mellanniQueries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/mellanniQuery" }
+    },
+    "skillInventory": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/skillInventoryItem" }
+    }
+  },
+  "$defs": {
+    "nonEmpty": { "type": "string", "minLength": 1 },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "sourceIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "sourceIds"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "statement": { "$ref": "#/$defs/nonEmpty" },
+        "sourceIds": { "$ref": "#/$defs/sourceIds" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "url", "note"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "$ref": "#/$defs/nonEmpty" },
+        "url": { "type": "string", "format": "uri" },
+        "note": { "$ref": "#/$defs/nonEmpty" },
+        "publishedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "priorFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digestSlug", "findingId", "title"],
+      "properties": {
+        "digestSlug": { "$ref": "#/$defs/identifier" },
+        "findingId": { "$ref": "#/$defs/identifier" },
+        "title": { "$ref": "#/$defs/nonEmpty" }
+      }
+    },
+    "memoryRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "recordedAt", "authority", "summary"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "title": { "$ref": "#/$defs/nonEmpty" },
+        "recordedAt": { "type": "string", "format": "date-time" },
+        "authority": { "$ref": "#/$defs/nonEmpty" },
+        "summary": { "$ref": "#/$defs/nonEmpty" }
+      }
+    },
+    "memoryReconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "findingId",
+        "outcome",
+        "recordIds",
+        "matchRationale",
+        "comparison",
+        "decisionImpact"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "findingId": { "$ref": "#/$defs/identifier" },
+        "outcome": {
+          "enum": ["consistent", "contradicts", "extends", "no-relevant-record"]
+        },
+        "recordIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "matchRationale": { "$ref": "#/$defs/nonEmpty" },
+        "comparison": { "$ref": "#/$defs/nonEmpty" },
+        "decisionImpact": { "$ref": "#/$defs/nonEmpty" }
+      }
+    },
+    "mellanniQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "findingId",
+        "skillUri",
+        "provider",
+        "entityType",
+        "entityIds",
+        "source",
+        "window",
+        "grain",
+        "metrics",
+        "results"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "findingId": { "$ref": "#/$defs/identifier" },
+        "skillUri": {
+          "type": "string",
+          "pattern": "^mellanni://skills/[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "provider": { "$ref": "#/$defs/nonEmpty" },
+        "entityType": { "$ref": "#/$defs/nonEmpty" },
+        "entityIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonEmpty" }
+        },
+        "source": { "$ref": "#/$defs/nonEmpty" },
+        "window": { "$ref": "#/$defs/nonEmpty" },
+        "grain": { "$ref": "#/$defs/nonEmpty" },
+        "metrics": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonEmpty" }
+        },
+        "results": { "type": "object", "minProperties": 1 }
+      }
+    },
+    "skillInventoryItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "description"],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "pattern": "^mellanni://skills/[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "description": { "$ref": "#/$defs/nonEmpty" }
+      }
+    }
+  }
+}

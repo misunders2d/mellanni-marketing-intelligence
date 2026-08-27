@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -11,6 +11,13 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+
+from .editorial import (
+    private_digest_body,
+    public_digest_body,
+    validate_digest,
+    validate_evidence_packet,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -26,7 +33,9 @@ SOURCE_FIELDS = (
     "feed_urls,max_items,max_feed_candidates"
 )
 SOURCE_ADMIN_FIELDS = SOURCE_FIELDS + ",enabled,updated_at"
-DIGEST_ADMIN_FIELDS = "id,slug,published_on,status,title,summary,updated_at"
+DIGEST_ADMIN_FIELDS = (
+    "id,slug,published_on,status,title,summary,body,private_body,updated_at"
+)
 
 
 def _env_value(name: str, env_file: Path) -> str:
@@ -248,51 +257,21 @@ def set_source_state(base_url: str, key: str, slug: str, *, enabled: bool) -> di
     return rows[0]
 
 
-def digest_to_row(document: dict[str, Any], *, publish: bool) -> dict[str, Any]:
-    required_strings = ("slug", "date", "title", "summary")
-    for field in required_strings:
-        if not isinstance(document.get(field), str) or not document[field].strip():
-            raise ValueError(f"digest field {field!r} must be a non-empty string")
-    if not SLUG_PATTERN.fullmatch(document["slug"]):
-        raise ValueError("digest slug must contain lowercase letters, numbers, and hyphens only")
-    date.fromisoformat(document["date"])
-
-    topics = document.get("topics")
-    findings = document.get("findings")
-    sources = document.get("sources")
-    if not isinstance(topics, list) or not all(isinstance(item, str) for item in topics):
-        raise ValueError("digest topics must be a list of strings")
-    if not isinstance(findings, list) or not all(isinstance(item, str) for item in findings):
-        raise ValueError("digest findings must be a list of strings")
-    if not isinstance(sources, list):
-        raise ValueError("digest sources must be a list")
-    for source in sources:
-        if not isinstance(source, dict) or not all(
-            isinstance(source.get(field), str) and source[field].strip()
-            for field in ("name", "url")
-        ):
-            raise ValueError("each digest source needs non-empty name and url strings")
-
-    body = {
-        "topics": topics,
-        "findings": findings,
-        "sources": [
-            {
-                "name": source["name"],
-                "url": source["url"],
-                "note": source.get("note", ""),
-            }
-            for source in sources
-        ],
-        "isSample": document.get("isSample") is True,
-    }
+def digest_to_row(
+    document: dict[str, Any],
+    *,
+    publish: bool,
+    evidence_packet: dict[str, Any],
+) -> dict[str, Any]:
+    validate_digest(document, evidence_packet)
     return {
         "slug": document["slug"],
         "published_on": document["date"],
         "status": "published" if publish else "draft",
         "title": document["title"],
         "summary": document["summary"],
-        "body": body,
+        "body": public_digest_body(document),
+        "private_body": private_digest_body(document),
         "published_at": datetime.now(timezone.utc).isoformat() if publish else None,
     }
 
@@ -303,8 +282,13 @@ def push_digest(
     document: dict[str, Any],
     *,
     publish: bool,
+    evidence_packet: dict[str, Any],
 ) -> dict[str, Any]:
-    row = digest_to_row(document, publish=publish)
+    row = digest_to_row(
+        document,
+        publish=publish,
+        evidence_packet=evidence_packet,
+    )
     rows = _request_json(
         base_url,
         key,
@@ -357,18 +341,31 @@ def record_run(
     manifest: dict[str, Any],
     *,
     digest_id: str | None,
+    evidence_packet: dict[str, Any] | None = None,
+    outcome: str = "collection",
+    reason: str = "",
 ) -> None:
+    if outcome not in {"collection", "digest", "no-digest"}:
+        raise ValueError("run outcome must be collection, digest, or no-digest")
+    if outcome == "no-digest" and not reason.strip():
+        raise ValueError("no-digest run outcome requires a reason")
     statuses = manifest.get("source_statuses") or []
     error_count = sum(len(status.get("errors") or []) for status in statuses)
+    collection_succeeded = int(manifest.get("exit_code", 1)) == 0
+    run_status = "succeeded" if collection_succeeded and outcome != "no-digest" else "failed"
     payload = {
-        "status": "succeeded" if int(manifest.get("exit_code", 1)) == 0 else "failed",
+        "status": run_status,
+        "outcome": outcome,
+        "outcome_reason": reason.strip(),
         "started_at": manifest.get("started_at") or datetime.now(timezone.utc).isoformat(),
         "finished_at": manifest.get("finished_at") or datetime.now(timezone.utc).isoformat(),
         "source_count": int(manifest.get("source_count", 0)),
         "item_count": int(manifest.get("item_count", 0)),
         "warning_count": int(manifest.get("warning_count", 0)),
         "error_count": error_count,
-        "manifest": manifest,
+        "manifest": manifest
+        if evidence_packet is None
+        else {"collection": manifest, "evidencePacket": evidence_packet},
         "digest_id": digest_id,
     }
     _request_json(
@@ -406,6 +403,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     push_parser = subparsers.add_parser("push-digest")
     push_parser.add_argument("--input", type=Path, required=True)
+    push_parser.add_argument("--evidence-packet", type=Path, required=True)
     push_parser.add_argument("--manifest", type=Path)
     push_parser.add_argument("--publish", action="store_true")
 
@@ -420,10 +418,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate_parser = subparsers.add_parser("validate-digest")
     validate_parser.add_argument("--input", type=Path, required=True)
+    validate_parser.add_argument("--evidence-packet", type=Path, required=True)
+
+    packet_parser = subparsers.add_parser("validate-evidence-packet")
+    packet_parser.add_argument("--input", type=Path, required=True)
 
     run_parser = subparsers.add_parser("record-run")
     run_parser.add_argument("--manifest", type=Path, required=True)
     run_parser.add_argument("--digest-id")
+    run_parser.add_argument(
+        "--outcome", choices=("collection", "no-digest"), default="collection"
+    )
+    run_parser.add_argument("--reason", default="")
     return parser
 
 
@@ -432,8 +438,29 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "validate-digest":
             document = json.loads(args.input.read_text(encoding="utf-8"))
-            digest_to_row(document, publish=False)
+            evidence_packet = json.loads(
+                args.evidence_packet.read_text(encoding="utf-8")
+            )
+            digest_to_row(
+                document,
+                publish=False,
+                evidence_packet=evidence_packet,
+            )
             print(json.dumps({"status": "valid", "slug": document["slug"]}))
+            return 0
+
+        if args.command == "validate-evidence-packet":
+            packet = json.loads(args.input.read_text(encoding="utf-8"))
+            validate_evidence_packet(packet)
+            print(
+                json.dumps(
+                    {
+                        "status": "valid",
+                        "signal_count": len(packet["signals"]),
+                        "mellanni_query_count": len(packet["mellanniQueries"]),
+                    }
+                )
+            )
             return 0
 
         base_url, key = credentials(args.env_file, project_ref=args.project_ref)
@@ -477,24 +504,53 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "record-run":
             manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-            record_run(base_url, key, manifest, digest_id=args.digest_id)
+            record_run(
+                base_url,
+                key,
+                manifest,
+                digest_id=args.digest_id,
+                outcome=args.outcome,
+                reason=args.reason,
+            )
+            run_status = (
+                "succeeded"
+                if int(manifest.get("exit_code", 1)) == 0
+                and args.outcome != "no-digest"
+                else "failed"
+            )
             print(
                 json.dumps(
                     {
                         "status": "recorded",
-                        "run_status": "succeeded"
-                        if int(manifest.get("exit_code", 1)) == 0
-                        else "failed",
+                        "run_status": run_status,
+                        "outcome": args.outcome,
+                        "reason": args.reason.strip(),
                     }
                 )
             )
             return 0
 
         document = json.loads(args.input.read_text(encoding="utf-8"))
-        digest = push_digest(base_url, key, document, publish=args.publish)
+        evidence_packet = json.loads(
+            args.evidence_packet.read_text(encoding="utf-8")
+        )
+        digest = push_digest(
+            base_url,
+            key,
+            document,
+            publish=args.publish,
+            evidence_packet=evidence_packet,
+        )
         if args.manifest:
             manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-            record_run(base_url, key, manifest, digest_id=digest.get("id"))
+            record_run(
+                base_url,
+                key,
+                manifest,
+                digest_id=digest.get("id"),
+                evidence_packet=evidence_packet,
+                outcome="digest",
+            )
         print(json.dumps({"digest_id": digest.get("id"), "slug": digest.get("slug"), "status": digest.get("status")}))
         return 0
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:

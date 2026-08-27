@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-31T12:00:00Z",
+  "signals": [
+    {
+      "id": "protect-margin-test",
+      "statement": "Operators are increasingly evaluating channel growth on contribution rather than attributed revenue alone.",
+      "sourceIds": [
+        "operator-source"
+      ]
+    },
+    {
+      "id": "creator-commerce-signal",
+      "statement": "Creator-led commerce is expanding beyond direct conversion into product discovery and later demand capture.",
+      "sourceIds": [
+        "creator-source"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": "operator-source",
+      "name": "Illustrative operator source",
+      "url": "https://example.com/operator-economics",
+      "note": "Illustrative direct evidence URL; replace with a real source in an actual digest."
+    },
+    {
+      "id": "creator-source",
+      "name": "Illustrative creator-commerce source",
+      "url": "https://example.com/creator-commerce",
+      "note": "Illustrative direct evidence URL; replace with a real source in an actual digest."
+    }
+  ],
+  "priorDigestFindings": [],
+  "memoryBatch": {
+    "skillUri": "mellanni://skills/professional-memory-search",
+    "queries": [
+      "How has Mellanni evaluated contribution before channel growth?",
+      "What records connect creator discovery with later demand capture?",
+      "What evidence would change the current marketing decision?"
+    ]
+  },
+  "memoryRecords": [
+    {
+      "id": "record-creator-discovery",
+      "title": "Illustrative discovery and conversion record",
+      "recordedAt": "2026-08-01T12:00:00Z",
+      "authority": "Illustrative Professional Memory record",
+      "summary": "Discovery and measured conversion should remain separate claims until joined by evidence."
+    }
+  ],
+  "memoryReconciliations": [
+    {
+      "id": "memory-protect-margin",
+      "findingId": "protect-margin-test",
+      "outcome": "no-relevant-record",
+      "recordIds": [],
+      "matchRationale": "No selected record was specific enough to change the illustrative action.",
+      "comparison": "The bounded memory search found no record specific enough to change this illustrative decision.",
+      "decisionImpact": "Use the fresh private Mellanni evidence as the decision basis."
+    },
+    {
+      "id": "memory-creator-commerce",
+      "findingId": "creator-commerce-signal",
+      "outcome": "consistent",
+      "recordIds": [
+        "record-creator-discovery"
+      ],
+      "matchRationale": "The record directly addresses discovery versus conversion claims.",
+      "comparison": "The external signal is consistent with the selected historical record on separating discovery from measured conversion.",
+      "decisionImpact": "Keep the signal in the digest, but do not call it a Mellanni result without a bounded validation test."
+    }
+  ],
+  "mellanniQueries": [
+    {
+      "id": "query-protect-margin",
+      "findingId": "protect-margin-test",
+      "skillUri": "mellanni://skills/amazon-data-analysis",
+      "provider": "Illustrative first-party provider",
+      "entityType": "portfolio",
+      "entityIds": [
+        "illustrative-private-portfolio"
+      ],
+      "source": "Mellanni first-party reporting",
+      "window": "Trailing 28 days, America/Los_Angeles",
+      "grain": "Portfolio and day",
+      "metrics": [
+        "contribution efficiency",
+        "demand"
+      ],
+      "results": {
+        "note": "Illustrative private results. Actual packet preserves exact provider output and never enters the public digest."
+      }
+    }
+  ],
+  "skillInventory": [
+    {
+      "uri": "mellanni://skills/professional-memory-search",
+      "description": "Search and retrieve Professional Memory records."
+    },
+    {
+      "uri": "mellanni://skills/source-routing",
+      "description": "Route each Mellanni evidence question to its authoritative provider."
+    },
+    {
+      "uri": "mellanni://skills/amazon-data-analysis",
+      "description": "Analyze bounded first-party Amazon data for a concrete Mellanni decision."
+    },
+    {
+      "uri": "mellanni://skills/helium10-research",
+      "description": "Run bounded Helium 10 keyword and competitor research."
+    }
+  ]
+}

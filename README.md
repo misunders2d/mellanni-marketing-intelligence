@@ -7,6 +7,12 @@ in `supabase/`.
 Agents working in this repository must read `AGENTS.md` and the linked
 `mellanni-marketing-operator` project skill before operating live content.
 
+Install the locked Python environment once, then use `uv run` for every Python command:
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv sync --locked
+```
+
 Fetch-only pipeline for Plane project `MKT-1`:
 
 1. Collect recent items from the 12-source pilot registry.
@@ -19,13 +25,13 @@ The fetch pipeline does not start agents, score content, summarize findings, sch
 ## Manual run
 
 ```bash
-PYTHONPATH=src python -m mellanni_marketing_intelligence --since-days 8
+UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence --since-days 8
 ```
 
 Target one source while debugging:
 
 ```bash
-PYTHONPATH=src python -m mellanni_marketing_intelligence --source seller-sessions
+UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence --source seller-sessions
 ```
 
 Default output lives under ignored `journal/`. Source extracts are local artifacts and remain untracked.
@@ -68,31 +74,50 @@ in process memory only. Access to that profile is the authorization boundary.
 Export enabled sources into the existing fetcher format:
 
 ```bash
-PYTHONPATH=src python -m mellanni_marketing_intelligence.supabase_content \
+UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
   export-sources --output journal/runtime/sources.json
 ```
 
 Run collection from that exact snapshot:
 
 ```bash
-PYTHONPATH=src python -m mellanni_marketing_intelligence \
+UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence \
   --config journal/runtime/sources.json --since-days 8
+```
+
+Validate private evidence packet and digest input before its public/admin projections:
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
+  validate-evidence-packet --input examples/evidence-packet.example.json
+UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
+  validate-digest --input examples/digest.example.json \
+  --evidence-packet examples/evidence-packet.example.json
 ```
 
 Push an agent-produced digest as a draft:
 
 ```bash
-PYTHONPATH=src python -m mellanni_marketing_intelligence.supabase_content \
-  push-digest --input examples/digest.example.json
+UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
+  push-digest --input examples/digest.example.json \
+  --evidence-packet examples/evidence-packet.example.json
 ```
 
-Add `--manifest journal/<run>/manifest.json` to attach the run record. Add `--publish` only for an explicitly approved direct publication; normal flow is draft first, then publish from `/admin`.
+Add `--manifest journal/<run>/manifest.json` to attach collection plus private evidence packet to private run record. Public digest receives no exact internal metrics, identifiers, query results, or Professional Memory records. Add `--publish` only for explicitly approved direct publication; normal flow is draft first, then publish from `/admin`.
 
 Record any collection run independently, including failures that never produce a digest:
 
 ```bash
-PYTHONPATH=src python -m mellanni_marketing_intelligence.supabase_content \
+UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
   record-run --manifest journal/<run>/manifest.json
+```
+
+When collection succeeded but synthesis cannot continue, record the actual outcome:
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
+  record-run --manifest journal/<run>/manifest.json \
+  --outcome no-digest --reason "missing required Mellanni MCP capability"
 ```
 
 Use `--digest-id UUID` only when a digest was created separately and should be linked to that run.
@@ -120,7 +145,7 @@ Feed probing stays sequential and bounded. Explicit `feed_urls` are always eligi
 ## Tests
 
 ```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
+UV_CACHE_DIR=/tmp/uv-cache uv run python -m unittest discover -s tests -v
 ```
 
 Weekly scheduler is not installed yet. Schedule still needs day/time confirmation.

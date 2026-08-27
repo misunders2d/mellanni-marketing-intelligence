@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mellanni.com/schemas/marketing-digest-v2.json",
+  "title": "Mellanni Marketing Intelligence digest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "slug",
+    "date",
+    "title",
+    "summary",
+    "topics",
+    "privacy",
+    "actions",
+    "signals",
+    "sources"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "slug": { "$ref": "#/$defs/slug" },
+    "date": { "type": "string", "format": "date" },
+    "title": { "$ref": "#/$defs/nonEmpty" },
+    "summary": { "$ref": "#/$defs/nonEmpty" },
+    "topics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmpty" },
+      "uniqueItems": true
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["internalValuesPublished", "internalIdentifiersPublished"],
+      "properties": {
+        "internalValuesPublished": { "const": false },
+        "internalIdentifiersPublished": { "const": false }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/action" }
+    },
+    "signals": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/signal" }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "isSample": { "type": "boolean" }
+  },
+  "$defs": {
+    "nonEmpty": { "type": "string", "minLength": 1 },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "sourceIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "comparison", "decisionImpact", "privateEvidenceRefs"],
+      "properties": {
+        "outcome": {
+          "enum": ["consistent", "contradicts", "extends", "no-relevant-record"]
+        },
+        "comparison": { "$ref": "#/$defs/nonEmpty" },
+        "decisionImpact": { "$ref": "#/$defs/nonEmpty" },
+        "privateEvidenceRefs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/identifier" }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "outcome": { "const": "no-relevant-record" } },
+            "required": ["outcome"]
+          },
+          "then": {
+            "properties": { "privateEvidenceRefs": { "maxItems": 0 } }
+          },
+          "else": {
+            "properties": { "privateEvidenceRefs": { "minItems": 1 } }
+          }
+        }
+      ]
+    },
+    "novelty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["novel", "supersedes"] },
+        "reference": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*#[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "materialUpdate": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "supersedes" } },
+            "required": ["status"]
+          },
+          "then": { "required": ["reference", "materialUpdate"] }
+        }
+      ]
+    },
+    "skillReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "applicability", "requiredInputs", "intendedNextOperation"],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "pattern": "^mellanni://skills/[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "applicability": { "$ref": "#/$defs/nonEmpty" },
+        "requiredInputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonEmpty" }
+        },
+        "intendedNextOperation": { "$ref": "#/$defs/nonEmpty" }
+      }
+    },
+    "skillReferences": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/skillReference" }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "externalSignal",
+        "sourceIds",
+        "memory",
+        "mellanniEvidence",
+        "privateDecision",
+        "guidance",
+        "timebox",
+        "kpi",
+        "successCondition",
+        "stopCondition",
+        "confidence",
+        "limitations",
+        "novelty",
+        "skillReferences"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "title": { "$ref": "#/$defs/nonEmpty" },
+        "externalSignal": { "$ref": "#/$defs/nonEmpty" },
+        "sourceIds": { "$ref": "#/$defs/sourceIds" },
+        "memory": { "$ref": "#/$defs/memory" },
+        "mellanniEvidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "entityScope",
+            "conclusion",
+            "source",
+            "window",
+            "grain",
+            "privateQueryRefs",
+            "sensitiveValuesWithheld"
+          ],
+          "properties": {
+            "entityScope": { "$ref": "#/$defs/nonEmpty" },
+            "conclusion": { "$ref": "#/$defs/nonEmpty" },
+            "source": { "$ref": "#/$defs/nonEmpty" },
+            "window": { "$ref": "#/$defs/nonEmpty" },
+            "grain": { "$ref": "#/$defs/nonEmpty" },
+            "privateQueryRefs": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/identifier" }
+            },
+            "sensitiveValuesWithheld": { "const": true }
+          }
+        },
+        "privateDecision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "entityIds",
+            "baseline",
+            "guidance",
+            "kpi",
+            "successCondition",
+            "stopCondition"
+          ],
+          "properties": {
+            "entityIds": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/nonEmpty" }
+            },
+            "baseline": { "type": "string", "pattern": ".*[0-9].*" },
+            "guidance": { "$ref": "#/$defs/nonEmpty" },
+            "kpi": { "$ref": "#/$defs/nonEmpty" },
+            "successCondition": { "type": "string", "pattern": ".*[0-9].*" },
+            "stopCondition": { "type": "string", "pattern": ".*[0-9].*" }
+          }
+        },
+        "guidance": { "$ref": "#/$defs/nonEmpty" },
+        "timebox": { "$ref": "#/$defs/nonEmpty" },
+        "kpi": { "$ref": "#/$defs/nonEmpty" },
+        "successCondition": { "$ref": "#/$defs/nonEmpty" },
+        "stopCondition": { "$ref": "#/$defs/nonEmpty" },
+        "confidence": { "enum": ["high", "medium", "low"] },
+        "limitations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonEmpty" }
+        },
+        "novelty": { "$ref": "#/$defs/novelty" },
+        "skillReferences": { "$ref": "#/$defs/skillReferences" }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "externalSignal",
+        "sourceIds",
+        "memory",
+        "whyItMatters",
+        "nextValidation",
+        "novelty",
+        "skillReferences"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "title": { "$ref": "#/$defs/nonEmpty" },
+        "externalSignal": { "$ref": "#/$defs/nonEmpty" },
+        "sourceIds": { "$ref": "#/$defs/sourceIds" },
+        "memory": { "$ref": "#/$defs/memory" },
+        "whyItMatters": { "$ref": "#/$defs/nonEmpty" },
+        "nextValidation": { "$ref": "#/$defs/nonEmpty" },
+        "novelty": { "$ref": "#/$defs/novelty" },
+        "skillReferences": { "$ref": "#/$defs/skillReferences" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "url", "note"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "$ref": "#/$defs/nonEmpty" },
+        "url": { "type": "string", "format": "uri" },
+        "note": { "$ref": "#/$defs/nonEmpty" },
+        "publishedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

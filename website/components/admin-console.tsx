@@ -27,6 +27,22 @@ type DigestAdminRow = {
   title: string;
   published_on: string;
   status: "draft" | "published";
+  private_body: {
+    actions?: PrivateDecisionAction[];
+  } | null;
+};
+
+type PrivateDecisionAction = {
+  id: string;
+  title: string;
+  privateDecision: {
+    entityIds: string[];
+    baseline: string;
+    guidance: string;
+    kpi: string;
+    successCondition: string;
+    stopCondition: string;
+  };
 };
 
 type SourceDraft = {
@@ -61,6 +77,14 @@ function lines(value: string) {
     .split(/\r?\n|,/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function slugFromName(value: string) {
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 function sourceDraft(source: SourceRow): SourceDraft {
@@ -99,7 +123,7 @@ export function AdminConsole() {
       supabase.from("sources").select("*").order("name"),
       supabase
         .from("digests")
-        .select("id,slug,title,published_on,status")
+        .select("id,slug,title,published_on,status,private_body")
         .order("published_on", { ascending: false }),
     ]);
 
@@ -155,7 +179,7 @@ export function AdminConsole() {
     setMessage("");
 
     const payload = {
-      slug: draft.slug.trim(),
+      slug: draft.slug.trim() || slugFromName(draft.name),
       name: draft.name.trim(),
       home_url: draft.homeUrl.trim(),
       priority: draft.priority.trim() || "A",
@@ -272,18 +296,58 @@ export function AdminConsole() {
         </div>
 
         <form className="source-form" onSubmit={saveSource}>
-          <div className="form-grid">
-            <label>Slug<input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value={draft.slug} onChange={(event) => setDraft({ ...draft, slug: event.target.value })} /></label>
-            <label>Name<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
-            <label className="wide-field">Homepage URL<input required type="url" value={draft.homeUrl} onChange={(event) => setDraft({ ...draft, homeUrl: event.target.value })} /></label>
-            <label>Priority<input required value={draft.priority} onChange={(event) => setDraft({ ...draft, priority: event.target.value })} /></label>
-            <label>Max items<input required min="1" max="100" type="number" value={draft.maxItems} onChange={(event) => setDraft({ ...draft, maxItems: event.target.value })} /></label>
-            <label>Feed probe cap<input required min="1" max="100" type="number" value={draft.maxFeedCandidates} onChange={(event) => setDraft({ ...draft, maxFeedCandidates: event.target.value })} /></label>
-            <label className="wide-field">Why this source<textarea value={draft.why} onChange={(event) => setDraft({ ...draft, why: event.target.value })} /></label>
-            <label>Feed URLs<textarea placeholder="One per line" value={draft.feedUrls} onChange={(event) => setDraft({ ...draft, feedUrls: event.target.value })} /></label>
-            <label>Include patterns<textarea placeholder="One per line" value={draft.includePatterns} onChange={(event) => setDraft({ ...draft, includePatterns: event.target.value })} /></label>
-            <label>Allowed hosts<textarea placeholder="One per line" value={draft.allowedHosts} onChange={(event) => setDraft({ ...draft, allowedHosts: event.target.value })} /></label>
+          <div className="source-basics">
+            <label htmlFor="source-name">Source name</label>
+            <input id="source-name" required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+
+            <label htmlFor="source-homepage">Homepage URL</label>
+            <input id="source-homepage" required type="url" value={draft.homeUrl} onChange={(event) => setDraft({ ...draft, homeUrl: event.target.value })} />
+
+            <label htmlFor="source-why">Why is this source useful?</label>
+            <textarea id="source-why" placeholder="What ecommerce knowledge should the digest look for here?" value={draft.why} onChange={(event) => setDraft({ ...draft, why: event.target.value })} />
           </div>
+
+          <details className="advanced-source-settings">
+            <summary>
+              Advanced collection settings
+              <span>Optional</span>
+            </summary>
+            <p className="advanced-settings-intro">
+              Leave these defaults alone unless a source is missing articles or following the wrong links.
+            </p>
+            <div className="form-grid">
+              <label htmlFor="source-slug">
+                Source ID
+                <span className="field-help" id="source-slug-help">Auto-created from the name when blank. Lowercase letters, numbers, and hyphens only.</span>
+                <input id="source-slug" aria-describedby="source-slug-help" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value={draft.slug} onChange={(event) => setDraft({ ...draft, slug: event.target.value })} />
+              </label>
+              <label htmlFor="source-max-items">
+                Articles per run
+                <span className="field-help" id="source-max-items-help">Maximum articles kept from this source in one collection run.</span>
+                <input id="source-max-items" aria-describedby="source-max-items-help" required min="1" max="100" type="number" value={draft.maxItems} onChange={(event) => setDraft({ ...draft, maxItems: event.target.value })} />
+              </label>
+              <label htmlFor="source-feed-cap">
+                Feed discovery limit
+                <span className="field-help" id="source-feed-cap-help">Maximum auto-discovered RSS or Atom feeds tried before webpage fallback.</span>
+                <input id="source-feed-cap" aria-describedby="source-feed-cap-help" required min="1" max="100" type="number" value={draft.maxFeedCandidates} onChange={(event) => setDraft({ ...draft, maxFeedCandidates: event.target.value })} />
+              </label>
+              <label htmlFor="source-feed-urls">
+                Known RSS or Atom feeds
+                <span className="field-help" id="source-feed-urls-help">Optional. One full feed URL per line. Collector auto-discovers feeds when blank.</span>
+                <textarea id="source-feed-urls" aria-describedby="source-feed-urls-help" placeholder="https://example.com/feed.xml" value={draft.feedUrls} onChange={(event) => setDraft({ ...draft, feedUrls: event.target.value })} />
+              </label>
+              <label htmlFor="source-include-patterns">
+                URL include fragments
+                <span className="field-help" id="source-include-patterns-help">Optional plain text, not regex. Keep links whose URL contains any listed fragment.</span>
+                <textarea id="source-include-patterns" aria-describedby="source-include-patterns-help" placeholder="/articles/" value={draft.includePatterns} onChange={(event) => setDraft({ ...draft, includePatterns: event.target.value })} />
+              </label>
+              <label htmlFor="source-allowed-hosts">
+                Additional allowed domains
+                <span className="field-help" id="source-allowed-hosts-help">Optional. Homepage domain is already allowed. Add another domain only when articles or feeds live there.</span>
+                <textarea id="source-allowed-hosts" aria-describedby="source-allowed-hosts-help" placeholder="feeds.example.com" value={draft.allowedHosts} onChange={(event) => setDraft({ ...draft, allowedHosts: event.target.value })} />
+              </label>
+            </div>
+          </details>
           <div className="form-actions">
             <button className="primary-button" type="submit" disabled={busy}>{draft.id ? "Save source" : "Add source"}</button>
             {draft.id ? <button className="secondary-button" type="button" onClick={() => setDraft(EMPTY_SOURCE)}>Cancel edit</button> : null}
@@ -294,7 +358,7 @@ export function AdminConsole() {
           {sources.map((source) => (
             <article className="source-row" key={source.id}>
               <div>
-                <p className="source-status">{source.enabled ? "Enabled" : "Paused"} · Priority {source.priority}</p>
+                <p className="source-status">{source.enabled ? "Enabled" : "Paused"}</p>
                 <h3>{source.name}</h3>
                 <a href={source.home_url} target="_blank" rel="noreferrer">{source.home_url}</a>
               </div>
@@ -316,10 +380,51 @@ export function AdminConsole() {
         </div>
         <div className="source-list">
           {digests.map((digest) => (
-            <article className="source-row" key={digest.id}>
-              <div>
+            <article className="source-row digest-admin-row" key={digest.id}>
+              <div className="digest-admin-content">
                 <p className="source-status">{digest.status} · {digest.published_on}</p>
                 <h3>{digest.title}</h3>
+                {digest.private_body?.actions?.length ? (
+                  <details className="private-decision-guide">
+                    <summary>
+                      Private decision guide ({digest.private_body.actions.length})
+                    </summary>
+                    <p className="private-guide-intro">
+                      Mellanni-only baselines and thresholds. Never shown on public digest pages.
+                    </p>
+                    {digest.private_body.actions.map((action) => (
+                      <section className="private-action" key={action.id}>
+                        <h4>{action.title}</h4>
+                        <dl>
+                          <div>
+                            <dt>Entity</dt>
+                            <dd>{action.privateDecision.entityIds.join(", ")}</dd>
+                          </div>
+                          <div>
+                            <dt>Measured baseline</dt>
+                            <dd>{action.privateDecision.baseline}</dd>
+                          </div>
+                          <div>
+                            <dt>Guidance</dt>
+                            <dd>{action.privateDecision.guidance}</dd>
+                          </div>
+                          <div>
+                            <dt>KPI</dt>
+                            <dd>{action.privateDecision.kpi}</dd>
+                          </div>
+                          <div>
+                            <dt>Success</dt>
+                            <dd>{action.privateDecision.successCondition}</dd>
+                          </div>
+                          <div>
+                            <dt>Stop</dt>
+                            <dd>{action.privateDecision.stopCondition}</dd>
+                          </div>
+                        </dl>
+                      </section>
+                    ))}
+                  </details>
+                ) : null}
               </div>
               <button className="secondary-button" type="button" onClick={() => void toggleDigest(digest)} disabled={busy}>
                 {digest.status === "draft" ? "Publish" : "Return to draft"}

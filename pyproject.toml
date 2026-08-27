@@ -3,7 +3,7 @@ name = "mellanni-marketing-intelligence"
 version = "0.1.0"
 description = "Programmatic weekly marketing-source collection into a local journal"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["jsonschema>=4.23,<5"]
 
 [project.scripts]
 mellanni-marketing-intelligence = "mellanni_marketing_intelligence.cli:main"

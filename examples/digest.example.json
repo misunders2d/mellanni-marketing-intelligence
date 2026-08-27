@@ -1,20 +1,126 @@
 {
+  "schemaVersion": 2,
   "slug": "2026-08-31-weekly-marketing-digest",
   "date": "2026-08-31",
   "title": "Weekly marketing intelligence",
-  "summary": "A concise statement of the most decision-relevant external signals this week.",
+  "summary": "Illustrative structure for decision-useful Mellanni guidance and broader ecommerce signals.",
   "topics": [
-    "Creative",
-    "Amazon Ads"
+    "Profitability",
+    "Creator commerce"
   ],
-  "findings": [
-    "State one evidence-bounded finding and the practical next action."
+  "privacy": {
+    "internalValuesPublished": false,
+    "internalIdentifiersPublished": false
+  },
+  "actions": [
+    {
+      "id": "protect-margin-test",
+      "title": "Keep the next growth test inside the private margin guardrail",
+      "externalSignal": "Operators are increasingly evaluating channel growth on contribution rather than attributed revenue alone.",
+      "sourceIds": [
+        "operator-source"
+      ],
+      "memory": {
+        "outcome": "no-relevant-record",
+        "comparison": "The bounded memory search found no record specific enough to change this illustrative decision.",
+        "decisionImpact": "Use the fresh private Mellanni evidence as the decision basis.",
+        "privateEvidenceRefs": []
+      },
+      "mellanniEvidence": {
+        "entityScope": "Illustrative Mellanni portfolio",
+        "conclusion": "Private portfolio evidence supports an efficiency-first test; exact values and identifiers are withheld from the public digest.",
+        "source": "Mellanni first-party reporting",
+        "window": "Trailing 28 days, America/Los_Angeles",
+        "grain": "Portfolio and day",
+        "privateQueryRefs": [
+          "query-protect-margin"
+        ],
+        "sensitiveValuesWithheld": true
+      },
+      "privateDecision": {
+        "entityIds": [
+          "illustrative-private-portfolio"
+        ],
+        "baseline": "Illustrative contribution efficiency is 31 percent over the trailing 28 days.",
+        "guidance": "Run one bounded growth test inside the measured portfolio guardrail.",
+        "kpi": "Contribution efficiency and qualified demand",
+        "successCondition": "Promote the test if contribution efficiency improves to 26 percent or better while qualified demand stays within 5 percent of baseline.",
+        "stopCondition": "Stop if contribution efficiency reaches 34 percent or inventory coverage falls below 21 days."
+      },
+      "guidance": "Run one bounded channel test and evaluate contribution alongside delivery and attributed demand.",
+      "timebox": "Two weekly review cycles",
+      "kpi": "Contribution efficiency versus the private baseline",
+      "successCondition": "Efficiency improves versus the private baseline while demand remains within the approved operating range.",
+      "stopCondition": "Stop if contribution worsens beyond the private guardrail or inventory can no longer support the test.",
+      "confidence": "medium",
+      "limitations": [
+        "This checked-in example contains no real Mellanni metric or identifier."
+      ],
+      "novelty": {
+        "status": "novel"
+      },
+      "skillReferences": [
+        {
+          "uri": "mellanni://skills/source-routing",
+          "applicability": "Choose the first-party source that owns each required business metric.",
+          "requiredInputs": [
+            "entity scope",
+            "metric",
+            "time window"
+          ],
+          "intendedNextOperation": "Route the approved test readback to the correct Mellanni provider."
+        }
+      ]
+    }
+  ],
+  "signals": [
+    {
+      "id": "creator-commerce-signal",
+      "title": "Creator commerce is becoming a discovery layer",
+      "externalSignal": "Creator-led commerce is expanding beyond direct conversion into product discovery and later demand capture.",
+      "sourceIds": [
+        "creator-source"
+      ],
+      "memory": {
+        "outcome": "consistent",
+        "comparison": "The external signal is consistent with the selected historical record on separating discovery from measured conversion.",
+        "decisionImpact": "Keep the signal in the digest, but do not call it a Mellanni result without a bounded validation test.",
+        "privateEvidenceRefs": [
+          "memory-creator-commerce"
+        ]
+      },
+      "whyItMatters": "This may affect creative, attribution, and demand-capture choices across ecommerce channels, not only Amazon.",
+      "nextValidation": "Define a small creator-content holdout and query branded demand plus downstream conversion before promoting this signal to an Action.",
+      "novelty": {
+        "status": "novel"
+      },
+      "skillReferences": [
+        {
+          "uri": "mellanni://skills/helium10-research",
+          "applicability": "Check whether external discovery coincides with measurable branded or category search movement.",
+          "requiredInputs": [
+            "seed keywords",
+            "marketplace",
+            "comparison window"
+          ],
+          "intendedNextOperation": "Run bounded keyword discovery and compare it with first-party demand evidence."
+        }
+      ]
+    }
   ],
   "sources": [
     {
-      "name": "Source name",
-      "url": "https://example.com/direct-evidence",
-      "note": "Explain what this source supports and any important limitation."
+      "id": "operator-source",
+      "name": "Illustrative operator source",
+      "url": "https://example.com/operator-economics",
+      "note": "Illustrative direct evidence URL; replace with a real source in an actual digest."
+    },
+    {
+      "id": "creator-source",
+      "name": "Illustrative creator-commerce source",
+      "url": "https://example.com/creator-commerce",
+      "note": "Illustrative direct evidence URL; replace with a real source in an actual digest."
     }
-  ]
+  ],
+  "isSample": true
 }

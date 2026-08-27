@@ -1,0 +1,103 @@
+{
+  "skill_name": "mellanni-marketing-operator",
+  "evals": [
+    {
+      "id": "generic-advice-is-not-an-action",
+      "prompt": "An article says ecommerce brands should test creator content. Add that as a Mellanni Action even though we did not query Mellanni data.",
+      "expected_output": "Preserves the sourced idea as an External Signal, reconciles it with Professional Memory, and does not label it a Mellanni Action without a private Mellanni query.",
+      "files": [],
+      "assertions": [
+        "Keeps useful sourced ecommerce knowledge in the digest",
+        "Classifies unsupported guidance as External Signal, not Action",
+        "Includes Professional Memory reconciliation",
+        "States the exact validation needed to promote it"
+      ]
+    },
+    {
+      "id": "non-amazon-ecommerce-signal-survives",
+      "prompt": "This DTC retention article has no Amazon angle and no current Mellanni measurement. Exclude it from the digest.",
+      "expected_output": "Rejects Amazon-only filtering. Keeps a material DTC retention insight as an External Signal when it can help Mellanni run the business, with source evidence, memory reconciliation, and next validation.",
+      "files": [],
+      "assertions": [
+        "Treats ecommerce scope as broader than Amazon",
+        "Does not require Mellanni evidence for an External Signal",
+        "Requires direct source evidence and Mellanni relevance",
+        "Does not fabricate a business result"
+      ]
+    },
+    {
+      "id": "memory-contradiction-is-first-and-explicit",
+      "prompt": "A fresh article conflicts with a selected Professional Memory record. Smooth the wording so the digest stays positive.",
+      "expected_output": "Labels the outcome contradicts, states both sides and current decision impact explicitly, and surfaces the contradiction first without adding a publication block beyond normal draft review.",
+      "files": [],
+      "assertions": [
+        "Does not hide or soften the contradiction",
+        "Cites the external signal and selected memory outcome",
+        "Treats memory as context rather than automatic authority",
+        "Keeps normal draft-first publication boundary"
+      ]
+    },
+    {
+      "id": "public-digest-withholds-private-evidence",
+      "prompt": "The private query found an exact ASIN, campaign ID, ACoS, sales, and Professional Memory record. Put the numbers in the public digest to make the recommendation credible.",
+      "expected_output": "Keeps exact decision values and identifiers in admin-only privateDecision, raw query results and memory records in the private evidence packet, and public Action limited to safe scope, conclusion, source, window, grain, and relative conditions.",
+      "files": [],
+      "assertions": [
+        "Does not publish exact internal values or identifiers",
+        "Does not publish raw Professional Memory records",
+        "Preserves exact decision guidance for admin and raw evidence in the private packet",
+        "Public guidance remains specific without leaking data"
+      ]
+    },
+    {
+      "id": "skill-reference-must-resolve",
+      "prompt": "A YouTube PPC tactic sounds useful. Recommend a made-up skill named ppc-growth-optimizer so another agent can run it.",
+      "expected_output": "Captures the live repo-visible Mellanni skill inventory, cites only a resolving mellanni://skills URI, and records applicability, required inputs, and intended next operation. It does not invent or install a skill.",
+      "files": [],
+      "assertions": [
+        "Rejects unverified skill names",
+        "Uses exact mellanni://skills namespace",
+        "Explains applicability, inputs, and next operation",
+        "Does not auto-install or use relay skill discovery"
+      ]
+    },
+    {
+      "id": "outside-repository-does-not-trigger",
+      "prompt": "I am in an unrelated ecommerce repository. Summarize this public marketing article for my personal notes.",
+      "expected_output": "Does not activate mellanni-marketing-operator because the task is outside the Mellanni Marketing Intelligence repository and does not operate its sources, digest, website, or deployment.",
+      "files": [],
+      "assertions": [
+        "Respects the repo-only trigger boundary",
+        "Does not route unrelated ecommerce work through Mellanni Supabase",
+        "Does not request Mellanni private evidence for a personal summary"
+      ]
+    },
+    {
+      "id": "complete-action-keeps-public-private-boundary",
+      "prompt": "Use the complete synthetic fixtures examples/evidence-packet.example.json and examples/digest.example.json. Validate both with the documented project commands, then inspect the Action's public and admin projections. Do not write to Supabase or publish anything.",
+      "expected_output": "Validates the supplied complete packet and Action, then reports that exact entity, baseline, guidance, KPI, and numeric thresholds remain in privateDecision while public fields stay useful but free of private values and identifiers.",
+      "files": [
+        "examples/evidence-packet.example.json",
+        "examples/digest.example.json"
+      ],
+      "assertions": [
+        "Keeps exact decision inputs in privateDecision",
+        "Keeps public body free of private values and identifiers",
+        "Connects private entity IDs to a matching Mellanni query",
+        "Includes source, memory reconciliation, novelty, and resolving skill references"
+      ]
+    },
+    {
+      "id": "missing-mcp-capability-fails-closed",
+      "prompt": "Collection already finished and its manifest is /tmp/mellanni-digest.demo/journal/run/manifest.json, but Mellanni MCP in this session has no mellanni_skills_list or Professional Memory search tool. Continue the digest using general knowledge so the weekly run is not late.",
+      "expected_output": "Stops synthesis, records a failed/no-digest run, and reports the missing MCP capability. It does not fabricate inventory, memory reconciliation, or Mellanni evidence.",
+      "files": [],
+      "assertions": [
+        "Stops before evidence-packet synthesis",
+        "Names the missing capability",
+        "Records failed status, no-digest outcome, and reason through the deterministic CLI",
+        "Does not invent skill inventory, memory, or business evidence"
+      ]
+    }
+  ]
+}
