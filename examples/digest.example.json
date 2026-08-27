@@ -1,0 +1,20 @@
+{
+  "slug": "2026-08-31-weekly-marketing-digest",
+  "date": "2026-08-31",
+  "title": "Weekly marketing intelligence",
+  "summary": "A concise statement of the most decision-relevant external signals this week.",
+  "topics": [
+    "Creative",
+    "Amazon Ads"
+  ],
+  "findings": [
+    "State one evidence-bounded finding and the practical next action."
+  ],
+  "sources": [
+    {
+      "name": "Source name",
+      "url": "https://example.com/direct-evidence",
+      "note": "Explain what this source supports and any important limitation."
+    }
+  ]
+}

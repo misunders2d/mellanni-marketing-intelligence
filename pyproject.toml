@@ -7,6 +7,7 @@ dependencies = []
 
 [project.scripts]
 mellanni-marketing-intelligence = "mellanni_marketing_intelligence.cli:main"
+mellanni-supabase-content = "mellanni_marketing_intelligence.supabase_content:main"
 
 [build-system]
 requires = ["setuptools>=68"]

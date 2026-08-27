@@ -1,21 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { digests, formatDigestDate, getDigestBySlug } from "@/lib/digests";
+import { formatDigestDate } from "@/lib/digests";
+import { getPublishedDigestBySlug } from "@/lib/supabase-public";
 
 type DigestPageProps = {
   params: Promise<{ slug: string }>;
 };
 
-export const dynamicParams = false;
-
-export function generateStaticParams() {
-  return digests.map((digest) => ({ slug: digest.slug }));
-}
+export const revalidate = 60;
 
 export async function generateMetadata({ params }: DigestPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const digest = getDigestBySlug(slug);
+  const digest = await getPublishedDigestBySlug(slug);
 
   if (!digest) return { title: "Digest not found" };
 
@@ -33,7 +30,7 @@ export async function generateMetadata({ params }: DigestPageProps): Promise<Met
 
 export default async function DigestPage({ params }: DigestPageProps) {
   const { slug } = await params;
-  const digest = getDigestBySlug(slug);
+  const digest = await getPublishedDigestBySlug(slug);
 
   if (!digest) notFound();
 

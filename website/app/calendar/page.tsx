@@ -1,13 +1,17 @@
 import type { Metadata } from "next";
 import { DigestCalendar } from "@/components/digest-calendar";
-import { digests } from "@/lib/digests";
+import { getPublishedDigests } from "@/lib/supabase-public";
 
 export const metadata: Metadata = {
   title: "Calendar",
   description: "Browse Mellanni Marketing Intelligence weekly digests by publication date.",
 };
 
-export default function CalendarPage() {
+export const revalidate = 60;
+
+export default async function CalendarPage() {
+  const digests = await getPublishedDigests();
+
   return (
     <div className="shell interior-page">
       <header className="page-header split-header">

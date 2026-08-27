@@ -41,6 +41,51 @@ node --env-file=.env scripts/youtube-summary.mjs "https://www.youtube.com/watch?
 
 Optional focus question follows the URL. Model overrides use `YOUTUBE_SUMMARIZER_MODEL` and `YOUTUBE_SUMMARIZER_FALLBACK_MODEL`.
 
+## Supabase content flow
+
+Supabase is the live source of truth for enabled sources, draft/published digests, and run records. The checked-in `config/sources.json` remains an offline fixture.
+
+Local runner credentials belong only in ignored root `.env`:
+
+```dotenv
+SUPABASE_URL=https://PROJECT_REF.supabase.co
+SUPABASE_SECRET_KEY=your-secret-key
+```
+
+Never put the secret key in `website/`, Vercel, client code, logs, or chat. Website/browser access uses only the publishable key plus Row Level Security.
+
+Export enabled sources into the existing fetcher format:
+
+```bash
+PYTHONPATH=src python -m mellanni_marketing_intelligence.supabase_content \
+  export-sources --output journal/runtime/sources.json
+```
+
+Run collection from that exact snapshot:
+
+```bash
+PYTHONPATH=src python -m mellanni_marketing_intelligence \
+  --config journal/runtime/sources.json --since-days 8
+```
+
+Push an agent-produced digest as a draft:
+
+```bash
+PYTHONPATH=src python -m mellanni_marketing_intelligence.supabase_content \
+  push-digest --input examples/digest.example.json
+```
+
+Add `--manifest journal/<run>/manifest.json` to attach the run record. Add `--publish` only for an explicitly approved direct publication; normal flow is draft first, then publish from `/admin`.
+
+The website needs only:
+
+```dotenv
+NEXT_PUBLIC_SUPABASE_URL=https://PROJECT_REF.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+```
+
+Public pages read published digests dynamically. `/admin` authenticates `sergey@mellanni.com`, manages enabled/paused sources, and promotes drafts to published status without redeploying the site.
+
 ## Manifest observability
 
 New runs use additive manifest schema v2. Existing fields keep their original names and meanings. V2 adds:

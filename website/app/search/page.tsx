@@ -1,13 +1,17 @@
 import type { Metadata } from "next";
 import { SearchExplorer } from "@/components/search-explorer";
-import { digests } from "@/lib/digests";
+import { getPublishedDigests } from "@/lib/supabase-public";
 
 export const metadata: Metadata = {
   title: "Search",
   description: "Search weekly marketing intelligence digests by topic, finding, or source.",
 };
 
-export default function SearchPage() {
+export const revalidate = 60;
+
+export default async function SearchPage() {
+  const digests = await getPublishedDigests();
+
   return (
     <div className="shell interior-page">
       <header className="page-header split-header">

@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { DigestCard } from "@/components/digest-card";
-import { digests } from "@/lib/digests";
+import { getPublishedDigests } from "@/lib/supabase-public";
 
-export default function HomePage() {
+export const revalidate = 60;
+
+export default async function HomePage() {
+  const digests = await getPublishedDigests();
   const latestDigest = digests[0];
 
   return (
@@ -15,9 +18,11 @@ export default function HomePage() {
             Mellanni Marketing Intelligence brings sales economics, advertising, inventory, and search behavior into one readable weekly review.
           </p>
           <div className="hero-actions">
-            <Link className="primary-link" href={"/digests/" + latestDigest.slug}>
-              Read the sample digest <span aria-hidden="true">→</span>
-            </Link>
+            {latestDigest ? (
+              <Link className="primary-link" href={"/digests/" + latestDigest.slug}>
+                Read latest digest <span aria-hidden="true">→</span>
+              </Link>
+            ) : null}
             <Link className="text-link" href="/search">Search the archive</Link>
           </div>
         </div>
@@ -50,7 +55,17 @@ export default function HomePage() {
           </div>
           <Link className="text-link" href="/calendar">View publication calendar</Link>
         </div>
-        <DigestCard digest={latestDigest} />
+        {digests.length ? (
+          <div className="digest-list">
+            {digests.map((digest) => <DigestCard key={digest.slug} digest={digest} />)}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <p className="eyebrow">No published digest</p>
+            <h3>The first briefing is being prepared.</h3>
+            <p>Published editions will appear here without a website redeploy.</p>
+          </div>
+        )}
       </section>
 
       <section className="shell reading-guide" aria-labelledby="reading-guide-title">

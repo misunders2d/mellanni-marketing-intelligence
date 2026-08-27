@@ -4,6 +4,7 @@ const navigation = [
   { href: "/", label: "Home" },
   { href: "/search", label: "Search" },
   { href: "/calendar", label: "Calendar" },
+  { href: "/admin", label: "Admin" },
 ];
 
 export function SiteHeader() {
