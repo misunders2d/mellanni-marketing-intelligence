@@ -20,13 +20,10 @@ enabled = true
 site_url = "https://mellanni-marketing-insights.vercel.app"
 additional_redirect_urls = [
   "https://mellanni-marketing-insights.vercel.app/admin",
-  "https://*-mellanni.vercel.app/**",
   "http://127.0.0.1:3000/**",
 ]
-enable_signup = true
 enable_anonymous_sign_ins = false
 
 [auth.email]
-enable_signup = true
 double_confirm_changes = true
 enable_confirmations = true
