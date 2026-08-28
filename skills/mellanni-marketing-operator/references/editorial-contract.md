@@ -14,10 +14,10 @@ Each Action needs:
 
 - stable ID, title, exact external signal, and direct source IDs;
 - Professional Memory outcome and explicit decision impact;
-- safe employee-visible evidence summary with entity scope, source, Pacific-time window, and grain;
+- authenticated member-visible evidence summary with entity scope, source, Pacific-time window, grain, and any exact internal commercial metrics or business entity identifiers needed to support the decision;
 - one or more private Mellanni query references in evidence packet;
-- exact private entity IDs, measured baseline, guidance, KPI, numeric success condition, and numeric stop condition for authenticated admin review;
-- safe employee-visible guidance, timebox, KPI, relative success condition, relative stop condition, confidence, and limitations;
+- full structured admin-only operational detail, including private auth/account/billing identifiers when required for an approved operation;
+- member-visible guidance, timebox, KPI, exact or relative success condition, exact or relative stop condition, confidence, and limitations;
 - novelty status: `novel`, or `supersedes` with prior digest/finding and material update;
 - applicable installed Mellanni skill references.
 
@@ -39,7 +39,7 @@ Each Signal needs:
 
 Load `mellanni://skills/professional-memory-search`. After raw deduplication and item selection, run one deduplicated three-to-five-query semantic batch across all included Actions and External Signals. One follow-up batch is allowed only for a material gap. Retrieve selected records once.
 
-Preserve query, record ID, memory timestamp, authority, match rationale, comparison, and decision impact in private evidence packet. Employee-visible digest carries only safe comparison and decision impact.
+Preserve query, record ID, memory timestamp, authority, match rationale, comparison, and decision impact in private evidence packet. Member-visible digest may carry decision-useful internal metrics plus the selected comparison and decision impact, but never raw Professional Memory records.
 
 Allowed outcomes:
 
@@ -58,9 +58,9 @@ Load `mellanni://skills/source-routing`, then exact provider playbook. Use provi
 
 Private packet must identify concrete owned entity, provider, metric, exact value, Pacific-time window, grain, and query result. Keepa and Helium 10 may support research but do not replace first-party Mellanni evidence.
 
-Employee-visible digest must not expose exact internal values, ASIN/SKU/campaign/portfolio/keyword identifiers, query results, or memory records. It shows only safe entity scope, evidence conclusion, source, window, grain, and relative success/stop conditions. Set both public privacy flags to `false`; these fields describe the safe projection, not anonymous access.
+Member-visible digest is internal company content. It may include exact sales, spend, margin, advertising, conversion, inventory, percentage, unit, and decision-threshold values plus business entity identifiers needed to act, such as ASIN, SKU, campaign, portfolio, or keyword names/IDs. It must not expose secrets, credentials, private auth/account/billing identifiers, customer or employee PII, raw provider rows, or raw Professional Memory records. Set `privacy.exactValuesPublished` and `privacy.businessIdentifiersPublished` to match the member-visible digest; runtime validation derives both provenance-neutral flags and rejects mismatches. `rawEvidenceWithheld: true` means raw provider/query rows and raw memory records remain private, not that decision-useful internal data must be removed.
 
-The same validated digest input carries `privateDecision` with exact entity IDs, measured baseline, guidance, KPI, and numeric success/stop conditions. The CLI removes that object from employee-visible `body` and stores it in admin-only `digest_private_bodies.private_body`. Raw provider results and memory records remain only in private run record. Reader and anonymous access to private bodies is prohibited by grants and RLS.
+The same validated digest input carries `privateDecision` with full structured admin-only operational detail. The CLI removes that object from member-visible `body` and stores it in admin-only `digest_private_bodies.private_body`; decision-useful metrics, thresholds, and business entity identifiers may also appear in normal member-visible fields. Raw provider results and memory records remain only in private run record. Reader and anonymous access to private bodies is prohibited by grants and RLS.
 
 ## Skill references
 
@@ -86,14 +86,15 @@ Common routes include:
 
 ## Validation gates
 
-Private packet follows `schemas/evidence-packet.schema.json`; digest input follows `schemas/digest.schema.json`. Storage projects that validated input into safe employee-visible `body` and admin-only private body. Cross-field validator also enforces:
+Private packet follows `schemas/evidence-packet.schema.json`; digest input follows `schemas/digest.schema.json`. Storage projects that validated input into authenticated member-visible `body` and admin-only private body. Cross-field validator also enforces:
 
 - every included item exists as stable packet signal and preserves exact signal/source IDs;
 - every included item resolves to exactly one memory reconciliation;
 - every Action resolves to private Mellanni query for same finding;
 - every skill URI exists in captured inventory;
 - every superseded finding exists in captured prior digests;
-- no employee-visible sensitive values or identifiers;
+- member-visible exact business metrics and action-needed business entity identifiers are allowed; runtime scans every projected string plus title and summary for recognizable secrets/credentials, email addresses, phone numbers, labeled personal names, private account/auth/billing identifiers, Amazon order IDs, raw-row markers, and long unformatted digit runs, and derives the privacy flags;
+- semantic review still excludes novel or obfuscated PII/secrets and raw provider or memory excerpts that deterministic patterns cannot recognize;
 - at least one Action or External Signal; at most four Actions;
 - pipeline health stays in run record, never masquerades as marketing intelligence.
 

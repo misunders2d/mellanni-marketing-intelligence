@@ -9,8 +9,8 @@
     "Creator commerce"
   ],
   "privacy": {
-    "internalValuesPublished": false,
-    "internalIdentifiersPublished": false
+    "exactValuesPublished": true,
+    "businessIdentifiersPublished": true
   },
   "actions": [
     {
@@ -27,15 +27,15 @@
         "privateEvidenceRefs": []
       },
       "mellanniEvidence": {
-        "entityScope": "Illustrative Mellanni portfolio",
-        "conclusion": "Private portfolio evidence supports an efficiency-first test; exact values and identifiers are withheld from the public digest.",
+        "entityScope": "Illustrative portfolio / ASIN B012345678 / campaign SP-BRAND-042",
+        "conclusion": "Synthetic portfolio evidence shows $1.25M in sales and 31% contribution efficiency over the trailing 28 days, supporting an efficiency-first test.",
         "source": "Mellanni first-party reporting",
         "window": "Trailing 28 days, America/Los_Angeles",
         "grain": "Portfolio and day",
         "privateQueryRefs": [
           "query-protect-margin"
         ],
-        "sensitiveValuesWithheld": true
+        "rawEvidenceWithheld": true
       },
       "privateDecision": {
         "entityIds": [
@@ -47,14 +47,14 @@
         "successCondition": "Promote the test if contribution efficiency improves to 26 percent or better while qualified demand stays within 5 percent of baseline.",
         "stopCondition": "Stop if contribution efficiency reaches 34 percent or inventory coverage falls below 21 days."
       },
-      "guidance": "Run one bounded channel test and evaluate contribution alongside delivery and attributed demand.",
+      "guidance": "Run one bounded channel test while keeping contribution efficiency at 31% or better.",
       "timebox": "Two weekly review cycles",
-      "kpi": "Contribution efficiency versus the private baseline",
-      "successCondition": "Efficiency improves versus the private baseline while demand remains within the approved operating range.",
-      "stopCondition": "Stop if contribution worsens beyond the private guardrail or inventory can no longer support the test.",
+      "kpi": "Contribution efficiency and qualified demand",
+      "successCondition": "Promote if contribution efficiency reaches 26% or better while qualified demand stays within 5% of baseline.",
+      "stopCondition": "Stop if contribution efficiency reaches 34% or inventory coverage falls below 21 days.",
       "confidence": "medium",
       "limitations": [
-        "This checked-in example contains no real Mellanni metric or identifier."
+        "All checked-in metrics and identifiers are synthetic."
       ],
       "novelty": {
         "status": "novel"

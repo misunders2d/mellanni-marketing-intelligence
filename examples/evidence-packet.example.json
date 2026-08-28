@@ -89,7 +89,7 @@
         "demand"
       ],
       "results": {
-        "note": "Illustrative private results. Actual packet preserves exact provider output and never enters the public digest."
+        "note": "Illustrative private results. The member-visible digest may include decision-useful metrics and business identifiers, but raw provider output remains in the private packet."
       }
     }
   ],

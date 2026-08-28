@@ -12,32 +12,79 @@ from jsonschema import Draft202012Validator, FormatChecker
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DIGEST_SCHEMA_PATH = PROJECT_ROOT / "schemas" / "digest.schema.json"
 EVIDENCE_SCHEMA_PATH = PROJECT_ROOT / "schemas" / "evidence-packet.schema.json"
-PUBLIC_SENSITIVE_PATTERNS = (
-    ("Amazon ASIN", re.compile(r"\bB0[A-Z0-9]{8}\b", re.IGNORECASE)),
+MEMBER_VISIBLE_RESTRICTED_PATTERNS = (
     (
-        "labeled internal identifier",
+        "secret or credential",
         re.compile(
-            r"\b(?:SKU|ASIN|campaign|portfolio|keyword|search term)"
-            r"\s*(?:ID)?\s*[:#]\s*[A-Z0-9_-]{3,}\b",
+            r"\b(?:(?:api|oauth|client|access|refresh|private)[\s_-]*)?"
+            r"(?:secret|password|token|credential|private\s+key)\s*[:=]\s*\S{6,}",
             re.IGNORECASE,
         ),
     ),
-    ("currency value", re.compile(r"(?:[$€£]\s?\d|\b(?:USD|EUR|GBP)\s+\d)", re.IGNORECASE)),
-    ("percentage value", re.compile(r"\b\d+(?:\.\d+)?\s?%")),
     (
-        "word-form percentage value",
-        re.compile(r"\b\d+(?:\.\d+)?\s*(?:percent|pct)\b", re.IGNORECASE),
+        "email address",
+        re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),
     ),
-    ("multiplier value", re.compile(r"\b\d+(?:\.\d+)?\s*[x×](?!\w)", re.IGNORECASE)),
     (
-        "exact operating count",
+        "phone number",
         re.compile(
-            r"\b\d+(?:,\d{3})*(?:\.\d+)?\s+"
-            r"(?:units?|orders?|clicks?|impressions?|sessions?|sales)\b",
+            r"\b(?:(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]\d{3}[\s.-]\d{4}|"
+            r"(?:phone|tel(?:ephone)?|mobile|contact|callback)\s*[:=]?\s*"
+            r"(?:\+?1[\s.-]?)?(?:\d{10}|\d{3}[\s.-]\d{4}))\b",
             re.IGNORECASE,
         ),
     ),
-    ("long numeric identifier", re.compile(r"\b\d{7,}\b")),
+    (
+        "labeled personal name",
+        re.compile(
+            r"\b(?i:customer|employee|member)(?:\s+name)?\s*[:=]?\s+"
+            r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b"
+        ),
+    ),
+    ("Amazon order ID", re.compile(r"\b\d{3}-\d{7}-\d{7}\b")),
+    ("unformatted long digit run", re.compile(r"\b\d{12,}\b")),
+    (
+        "raw provider row",
+        re.compile(r"\b(?:raw\s+)?(?:provider\s+)?row\s*[:=]\s*\{", re.IGNORECASE),
+    ),
+    (
+        "account or identity identifier",
+        re.compile(
+            r"\b(?:account|auth(?:entication)?(?:[\s_-]+user)?|billing(?:[\s_-]+profile)?|"
+            r"payment|customer|employee|member)[\s_-]+(?:ID|identifier|number|UUID)\s*"
+            r"[:#=]?\s*[A-Z0-9][A-Z0-9_-]{4,}\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
+MEMBER_VISIBLE_VALUE_PATTERNS = (
+    re.compile(r"(?:[$€£]\s?\d|\b(?:USD|EUR|GBP)\s+\d)", re.IGNORECASE),
+    re.compile(r"\b\d+(?:\.\d+)?\s?%"),
+    re.compile(r"\b\d+(?:\.\d+)?\s*(?:percent|pct)\b", re.IGNORECASE),
+    re.compile(r"\b\d+(?:\.\d+)?\s*[x×](?!\w)", re.IGNORECASE),
+    re.compile(
+        r"\b\d+(?:,\d{3})*(?:\.\d+)?\s+"
+        r"(?:units?|orders?|clicks?|impressions?|sessions?|sales)\b",
+        re.IGNORECASE,
+    ),
+)
+MEMBER_VISIBLE_BUSINESS_IDENTIFIER_PATTERNS = (
+    re.compile(r"\bB0[A-Z0-9]{8}\b", re.IGNORECASE),
+    re.compile(
+        r"\bSKU(?:\s+(?:ID|name))?\s*(?:[:#=]\s*|\s+)"
+        r"[A-Z0-9][A-Z0-9_-]{2,}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:campaign|portfolio|keyword|search\s+term)\s+(?:ID|name)\s*"
+        r"[:#=]?\s*[A-Z0-9][A-Z0-9_-]{2,}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:campaign|portfolio|keyword|search\s+term)\s+"
+        r"(?=[A-Z0-9_-]*[-_])[A-Z0-9][A-Z0-9_-]{2,}\b",
+        re.IGNORECASE,
+    ),
 )
 
 
@@ -138,65 +185,80 @@ def validate_evidence_packet(packet: dict[str, Any]) -> None:
         )
 
 
-def _public_sensitive_text(document: dict[str, Any]) -> list[tuple[str, str]]:
-    fields: list[tuple[str, str]] = [
+def _string_fields(value: Any, path: str = "body") -> list[tuple[str, str]]:
+    if isinstance(value, str):
+        return [(path, value)]
+    if isinstance(value, list):
+        return [
+            field
+            for index, item in enumerate(value)
+            for field in _string_fields(item, f"{path}[{index}]")
+        ]
+    if isinstance(value, dict):
+        return [
+            field
+            for key, item in value.items()
+            for field in _string_fields(item, f"{path}.{key}")
+        ]
+    return []
+
+
+def _member_visible_text(document: dict[str, Any]) -> list[tuple[str, str]]:
+    projected = _project_member_visible_body(document, privacy={})
+    return [
         ("title", document["title"]),
         ("summary", document["summary"]),
-        *(("topics", topic) for topic in document["topics"]),
+        *_string_fields(projected),
     ]
-    for group in ("actions", "signals"):
-        for finding in document[group]:
-            prefix = f"{group}.{finding['id']}"
-            memory = finding["memory"]
-            fields.extend(
-                (
-                    (prefix + ".title", finding["title"]),
-                    (prefix + ".memory.comparison", memory["comparison"]),
-                    (prefix + ".memory.decisionImpact", memory["decisionImpact"]),
-                )
+
+
+def _derived_member_visible_privacy(document: dict[str, Any]) -> dict[str, bool]:
+    values = [value for _, value in _member_visible_text(document)]
+    return {
+        "exactValuesPublished": any(
+            pattern.search(value)
+            for value in values
+            for pattern in MEMBER_VISIBLE_VALUE_PATTERNS
+        ),
+        "businessIdentifiersPublished": any(
+            pattern.search(value)
+            for value in values
+            for pattern in MEMBER_VISIBLE_BUSINESS_IDENTIFIER_PATTERNS
+        ),
+    }
+
+
+def _mask_business_identifiers(value: str) -> str:
+    for pattern in MEMBER_VISIBLE_BUSINESS_IDENTIFIER_PATTERNS:
+        value = pattern.sub("<business-identifier>", value)
+    return value
+
+
+def _validate_member_visible_content(document: dict[str, Any]) -> None:
+    for location, value in _member_visible_text(document):
+        for label, pattern in MEMBER_VISIBLE_RESTRICTED_PATTERNS:
+            candidate = (
+                _mask_business_identifiers(value)
+                if label == "unformatted long digit run"
+                else value
             )
-            if group == "actions":
-                evidence = finding["mellanniEvidence"]
-                fields.extend(
-                    (
-                        (prefix + ".mellanniEvidence.entityScope", evidence["entityScope"]),
-                        (prefix + ".mellanniEvidence.conclusion", evidence["conclusion"]),
-                        (prefix + ".guidance", finding["guidance"]),
-                        (prefix + ".kpi", finding["kpi"]),
-                        (prefix + ".successCondition", finding["successCondition"]),
-                        (prefix + ".stopCondition", finding["stopCondition"]),
-                        *((prefix + ".limitations", item) for item in finding["limitations"]),
-                    )
-                )
-            else:
-                fields.extend(
-                    (
-                        (prefix + ".whyItMatters", finding["whyItMatters"]),
-                        (prefix + ".nextValidation", finding["nextValidation"]),
-                    )
-                )
-    fields.extend(
-        (f"sources.{source['id']}.note", source["note"])
-        for source in document["sources"]
-    )
-    return fields
-
-
-def _validate_public_privacy(document: dict[str, Any]) -> None:
-    for location, value in _public_sensitive_text(document):
-        for label, pattern in PUBLIC_SENSITIVE_PATTERNS:
-            if pattern.search(value):
+            if pattern.search(candidate):
                 raise ValueError(
-                    f"public digest {location} contains an exact {label}; "
-                    "keep exact Mellanni values and identifiers in the private evidence packet"
+                    f"authenticated digest {location} contains a restricted {label}"
                 )
+    expected_privacy = _derived_member_visible_privacy(document)
+    if document["privacy"] != expected_privacy:
+        raise ValueError(
+            "digest privacy flags do not match member-visible content: "
+            + json.dumps(expected_privacy, sort_keys=True)
+        )
 
 
 def validate_digest(document: dict[str, Any], packet: dict[str, Any]) -> None:
     _validate_schema(document, DIGEST_SCHEMA_PATH, "digest")
     validate_evidence_packet(packet)
     date.fromisoformat(document["date"])
-    _validate_public_privacy(document)
+    _validate_member_visible_content(document)
 
     findings = [*document["actions"], *document["signals"]]
     if not findings:
@@ -312,7 +374,11 @@ def validate_digest(document: dict[str, Any], packet: dict[str, Any]) -> None:
             )
 
 
-def public_digest_body(document: dict[str, Any]) -> dict[str, Any]:
+def _project_member_visible_body(
+    document: dict[str, Any],
+    *,
+    privacy: dict[str, bool],
+) -> dict[str, Any]:
     actions = []
     for action in document["actions"]:
         public_action = {
@@ -345,12 +411,19 @@ def public_digest_body(document: dict[str, Any]) -> dict[str, Any]:
     return {
         "schemaVersion": 2,
         "topics": document["topics"],
-        "privacy": document["privacy"],
+        "privacy": privacy,
         "actions": actions,
         "signals": signals,
         "sources": document["sources"],
         "isSample": document.get("isSample") is True,
     }
+
+
+def public_digest_body(document: dict[str, Any]) -> dict[str, Any]:
+    return _project_member_visible_body(
+        document,
+        privacy=_derived_member_visible_privacy(document),
+    )
 
 
 def private_digest_body(document: dict[str, Any]) -> dict[str, Any]:

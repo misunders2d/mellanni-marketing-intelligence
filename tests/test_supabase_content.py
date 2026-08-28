@@ -190,6 +190,10 @@ class SupabaseContentTests(unittest.TestCase):
         packet["signals"] = [packet["signals"][1]]
         packet["memoryReconciliations"] = [packet["memoryReconciliations"][1]]
         packet["mellanniQueries"] = []
+        digest["privacy"] = {
+            "exactValuesPublished": False,
+            "businessIdentifiersPublished": False,
+        }
 
         row = digest_to_row(digest, publish=False, evidence_packet=packet)
 
@@ -309,32 +313,163 @@ class SupabaseContentTests(unittest.TestCase):
         self.assertIn("p_private_body", payload)
         self.assertNotIn("private_body", payload["p_body"])
 
-    def test_public_digest_rejects_exact_private_values_and_identifiers(self) -> None:
+    def test_authenticated_digest_allows_internal_business_metrics(self) -> None:
         digest, packet = example_documents()
-        digest["actions"][0]["mellanniEvidence"]["entityScope"] = "ASIN B012345678"
-        with self.assertRaisesRegex(ValueError, "exact Amazon ASIN"):
-            digest_to_row(digest, publish=False, evidence_packet=packet)
-
-        digest, packet = example_documents()
+        digest["summary"] = "Sales reached $1,250,000 across 18,400 orders."
+        digest["actions"][0]["mellanniEvidence"]["entityScope"] = (
+            "ASIN B012345678 / SKU MLN-SHEET-001 / campaign SP-BRAND-042"
+        )
         digest["actions"][0]["kpi"] = "Reduce ACoS from 31%"
-        with self.assertRaisesRegex(ValueError, "exact percentage value"):
+        digest["actions"][0]["guidance"] = "Scale when return reaches 3.2x."
+        digest["sources"][0]["note"] = "Internal baseline is 31 pct."
+        packet["sources"][0]["note"] = "Internal baseline is 31 pct."
+
+        row = digest_to_row(digest, publish=False, evidence_packet=packet)
+
+        self.assertEqual(
+            row["summary"],
+            "Sales reached $1,250,000 across 18,400 orders.",
+        )
+        self.assertTrue(row["body"]["privacy"]["exactValuesPublished"])
+        self.assertTrue(row["body"]["privacy"]["businessIdentifiersPublished"])
+        self.assertEqual(row["body"]["actions"][0]["kpi"], "Reduce ACoS from 31%")
+        self.assertEqual(
+            row["body"]["actions"][0]["guidance"],
+            "Scale when return reaches 3.2x.",
+        )
+        self.assertIn(
+            "ASIN B012345678",
+            row["body"]["actions"][0]["mellanniEvidence"]["entityScope"],
+        )
+
+    def test_authenticated_digest_rejects_restricted_identity_identifiers(self) -> None:
+        digest, packet = example_documents()
+        digest["actions"][0]["mellanniEvidence"]["entityScope"] = (
+            "Amazon account ID ACCT12345"
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "restricted account or identity identifier",
+        ):
             digest_to_row(digest, publish=False, evidence_packet=packet)
 
+    def test_authenticated_digest_rejects_restricted_data_in_every_visible_field(self) -> None:
+        cases = (
+            ("summary", "customer email: jane@example.com", "email address"),
+            ("summary", "Customer Jane Doe was refunded.", "personal name"),
+            ("summary", "Customer callback: 555-0134.", "phone number"),
+            ("summary", "Customer phone: 5551234567.", "phone number"),
+            ("summary", "Reference 123456789012 pending.", "long digit run"),
+            (
+                "summary",
+                "Amazon order 111-2223334-5556667 was refunded.",
+                "Amazon order ID",
+            ),
+            ("summary", "row: {order_id: REDACTED}", "raw provider row"),
+            ("summary", "client_secret=synthetic_secret_value", "secret or credential"),
+            ("summary", "account_id: acct_123456789", "identity identifier"),
+            ("summary", "billing profile ID: BILL12345", "identity identifier"),
+            ("timebox", "employee ID: EMP12345", "identity identifier"),
+        )
+        for field, value, expected_error in cases:
+            with self.subTest(field=field, value=value):
+                digest, packet = example_documents()
+                if field == "timebox":
+                    digest["actions"][0][field] = value
+                else:
+                    digest[field] = value
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    digest_to_row(digest, publish=False, evidence_packet=packet)
+
+    def test_authenticated_digest_rejects_false_negative_privacy_flags(self) -> None:
         digest, packet = example_documents()
-        digest["actions"][0]["kpi"] = "Reduce ACoS from 31 percent"
-        with self.assertRaisesRegex(ValueError, "word-form percentage value"):
+        digest["privacy"] = {
+            "exactValuesPublished": False,
+            "businessIdentifiersPublished": False,
+        }
+
+        with self.assertRaisesRegex(ValueError, "privacy flags do not match"):
             digest_to_row(digest, publish=False, evidence_packet=packet)
 
+    def test_authenticated_digest_rejects_false_positive_privacy_flags(self) -> None:
         digest, packet = example_documents()
-        digest["actions"][0]["guidance"] = "Scale when return reaches 3.2x"
-        with self.assertRaisesRegex(ValueError, "multiplier value"):
+        digest["actions"] = []
+        packet["signals"] = [packet["signals"][1]]
+        packet["memoryReconciliations"] = [packet["memoryReconciliations"][1]]
+        packet["mellanniQueries"] = []
+        digest["privacy"] = {
+            "exactValuesPublished": True,
+            "businessIdentifiersPublished": True,
+        }
+
+        with self.assertRaisesRegex(ValueError, "privacy flags do not match"):
             digest_to_row(digest, publish=False, evidence_packet=packet)
 
+    def test_authenticated_digest_allows_long_numeric_campaign_id(self) -> None:
         digest, packet = example_documents()
-        digest["sources"][0]["note"] = "Private baseline is 31 pct"
-        packet["sources"][0]["note"] = "Private baseline is 31 pct"
-        with self.assertRaisesRegex(ValueError, "word-form percentage value"):
-            digest_to_row(digest, publish=False, evidence_packet=packet)
+        digest["actions"][0]["mellanniEvidence"]["entityScope"] = (
+            "campaign ID 123456789012345"
+        )
+
+        row = digest_to_row(digest, publish=False, evidence_packet=packet)
+
+        self.assertTrue(row["body"]["privacy"]["businessIdentifiersPublished"])
+        self.assertIn(
+            "campaign ID 123456789012345",
+            row["body"]["actions"][0]["mellanniEvidence"]["entityScope"],
+        )
+
+    def test_authenticated_digest_marks_nonnumeric_campaign_name(self) -> None:
+        digest, packet = example_documents()
+        digest["actions"][0]["mellanniEvidence"]["entityScope"] = "campaign SP-BRAND"
+
+        row = digest_to_row(digest, publish=False, evidence_packet=packet)
+
+        self.assertTrue(row["body"]["privacy"]["businessIdentifiersPublished"])
+
+    def test_exact_value_flag_is_provenance_neutral(self) -> None:
+        digest, packet = example_documents()
+        digest["actions"] = []
+        digest["signals"][0]["whyItMatters"] = "External benchmark conversion rose 31%."
+        packet["signals"] = [packet["signals"][1]]
+        packet["memoryReconciliations"] = [packet["memoryReconciliations"][1]]
+        packet["mellanniQueries"] = []
+        digest["privacy"] = {
+            "exactValuesPublished": True,
+            "businessIdentifiersPublished": False,
+        }
+
+        row = digest_to_row(digest, publish=False, evidence_packet=packet)
+
+        self.assertTrue(row["body"]["privacy"]["exactValuesPublished"])
+        self.assertFalse(row["body"]["privacy"]["businessIdentifiersPublished"])
+
+    def test_business_identifier_flag_ignores_portfolio_year(self) -> None:
+        digest, packet = example_documents()
+        digest["actions"] = []
+        digest["signals"][0]["whyItMatters"] = "Portfolio 2026 review remains external."
+        packet["signals"] = [packet["signals"][1]]
+        packet["memoryReconciliations"] = [packet["memoryReconciliations"][1]]
+        packet["mellanniQueries"] = []
+        digest["privacy"] = {
+            "exactValuesPublished": False,
+            "businessIdentifiersPublished": False,
+        }
+
+        row = digest_to_row(digest, publish=False, evidence_packet=packet)
+
+        self.assertFalse(row["body"]["privacy"]["businessIdentifiersPublished"])
+
+    def test_authenticated_digest_allows_numeric_business_range(self) -> None:
+        digest, packet = example_documents()
+        digest["actions"][0]["guidance"] = "Coverage ranged 1500-2000 units."
+
+        row = digest_to_row(digest, publish=False, evidence_packet=packet)
+
+        self.assertEqual(
+            row["body"]["actions"][0]["guidance"],
+            "Coverage ranged 1500-2000 units.",
+        )
 
     def test_private_decision_entities_must_come_from_queried_entities(self) -> None:
         digest, packet = example_documents()
@@ -354,7 +489,7 @@ class SupabaseContentTests(unittest.TestCase):
         packet["signals"].append(
             {
                 "id": "unused-signal",
-                "statement": "Useful signal omitted from public digest.",
+                "statement": "Useful signal omitted from member-visible digest.",
                 "sourceIds": ["creator-source"],
             }
         )

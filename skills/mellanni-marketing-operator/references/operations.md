@@ -141,7 +141,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supa
   validate-evidence-packet --input "$RUN_DIR/evidence-packet.json"
 ```
 
-7. Build digest input matching `examples/digest.example.json` only from validated packet. Use zero to four data-backed Mellanni Actions plus every material External Signal. Each Action includes exact `privateDecision` for admin and a safe employee-visible summary; never copy raw query results or memory records. Validator/storage split removes `privateDecision` from the employee-visible body. Validate cross-references locally without DB write:
+7. Build digest input matching `examples/digest.example.json` only from validated packet. Use zero to four data-backed Mellanni Actions plus every material External Signal. Member-visible fields may include exact internal sales, other decision-useful business metrics, and business entity identifiers needed to act. Each Action keeps full structured admin-only detail in `privateDecision`; never copy raw query results, raw memory records, secrets, credentials, private auth/account/billing identifiers, or customer/employee PII. Validator/storage split removes `privateDecision` from the member-visible body. Validate cross-references locally without DB write:
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \

@@ -4,7 +4,7 @@ This is one unified repository. Do not create another clone or worktree for proj
 
 Before collecting sources, changing live content, deploying, or maintaining this repo, read:
 
-`./.agents/skills/mellanni-marketing-operator/SKILL.md`
+`./skills/mellanni-marketing-operator/SKILL.md`
 
 ## Repository map
 
@@ -35,7 +35,9 @@ Do not use bare system `python`; digest validation depends on locked packages in
 - Source removal means pause. Published digest removal means return to draft. Hard deletion needs explicit user approval and is not exposed by normal CLI.
 - New or updated digest defaults to draft. Publish only when user explicitly requests publication.
 - Put fetched pages, manifests, draft JSON, screenshots, and other run artifacts in a unique external temporary directory. Never commit or publish them. Delete them after verified DB write/readback.
-- Anonymous users receive no site or database content. Active Google-authenticated `@mellanni.com` readers receive published safe `body` columns only. Admins may also read the separate `digest_private_bodies` table and operate sources, drafts, and runs.
+- Anonymous and inactive users receive no site or database content. Active Google-authenticated `@mellanni.com` members may read published internal digests, including exact sales figures, decision-useful sensitive business metrics, and business entity identifiers needed to act (for example ASIN, SKU, campaign, portfolio, or keyword names/IDs).
+- Never put secrets, credentials, private auth/account/billing identifiers, customer or employee PII, raw provider query results, or raw Professional Memory records in the member-visible digest body.
+- Admins may also read the separate `digest_private_bodies` table and operate sources, drafts, and runs. RLS remains the authority boundary for every tier.
 - Preserve existing unrelated working-tree changes. Do not create extra repos or worktrees.
 
 ## Verification

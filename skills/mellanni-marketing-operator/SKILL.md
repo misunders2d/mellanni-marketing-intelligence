@@ -24,8 +24,9 @@ Read [references/editorial-contract.md](references/editorial-contract.md) before
 - Every included Action or External Signal must reconcile against Professional Memory. Do not mutate Professional Memory during digest generation.
 - If Mellanni skill inventory/load or Professional Memory search/get capability is absent, stop synthesis, record the manifest with `record-run --outcome no-digest --reason ...`, and report the missing capability. Never substitute general knowledge.
 - Actions are Mellanni-specific and backed by private queried Mellanni evidence. External Signals remain included when useful even if no Mellanni evidence exists.
-- Employee-visible digest `body` must contain no private values, account identifiers, query results, or Professional Memory records. Exact decision values go to admin-only `digest_private_bodies`; raw evidence stays only in private run packet.
-- Website access requires active `@mellanni.com` membership plus Google OAuth. Anonymous and non-OAuth sessions receive no content. Reader and admin database access stays enforced by RLS, not redirect logic.
+- Authenticated member-visible digest `body` may include exact sales, spend, conversion, profit, inventory, percentage, unit, and decision-threshold values plus business entity identifiers needed to act, such as ASIN, SKU, campaign, portfolio, or keyword names/IDs.
+- Never put secrets, credentials, private auth/account/billing identifiers, customer or employee PII, raw provider query results, or raw Professional Memory records in member-visible `body`. Keep full structured admin detail in `privateDecision`/`digest_private_bodies`; raw evidence stays in the private run packet.
+- Website access requires active `@mellanni.com` membership plus Google OAuth. Anonymous, inactive, and non-OAuth sessions receive no content. Reader and admin database access stays enforced by RLS, not redirect logic.
 - Use direct evidence URLs in digest snapshot. Do not present external claims as Mellanni results.
 - Use external temporary directory for every run. Never place fetched source text or generated digest artifacts in Git.
 

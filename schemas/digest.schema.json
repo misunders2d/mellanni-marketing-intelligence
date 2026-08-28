@@ -30,10 +30,16 @@
     "privacy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["internalValuesPublished", "internalIdentifiersPublished"],
+      "required": ["exactValuesPublished", "businessIdentifiersPublished"],
       "properties": {
-        "internalValuesPublished": { "const": false },
-        "internalIdentifiersPublished": { "const": false }
+        "exactValuesPublished": {
+          "type": "boolean",
+          "description": "True when exact numeric values appear in the authenticated member-visible digest, regardless of source provenance."
+        },
+        "businessIdentifiersPublished": {
+          "type": "boolean",
+          "description": "True when action-needed business entity names or identifiers appear in the authenticated member-visible digest."
+        }
       }
     },
     "actions": {
@@ -180,7 +186,7 @@
             "window",
             "grain",
             "privateQueryRefs",
-            "sensitiveValuesWithheld"
+            "rawEvidenceWithheld"
           ],
           "properties": {
             "entityScope": { "$ref": "#/$defs/nonEmpty" },
@@ -194,7 +200,10 @@
               "uniqueItems": true,
               "items": { "$ref": "#/$defs/identifier" }
             },
-            "sensitiveValuesWithheld": { "const": true }
+            "rawEvidenceWithheld": {
+              "const": true,
+              "description": "Raw provider/query rows and raw memory records are withheld from the member-visible digest."
+            }
           }
         },
         "privateDecision": {
