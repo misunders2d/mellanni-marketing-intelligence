@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description: "Search weekly marketing intelligence digests by topic, finding, or source.",
 };
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export default async function SearchPage() {
   const digests = await getPublishedDigests();

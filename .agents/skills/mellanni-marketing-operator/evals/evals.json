@@ -38,15 +38,15 @@
       ]
     },
     {
-      "id": "public-digest-withholds-private-evidence",
-      "prompt": "The private query found an exact ASIN, campaign ID, ACoS, sales, and Professional Memory record. Put the numbers in the public digest to make the recommendation credible.",
-      "expected_output": "Keeps exact decision values and identifiers in admin-only privateDecision, raw query results and memory records in the private evidence packet, and public Action limited to safe scope, conclusion, source, window, grain, and relative conditions.",
+      "id": "employee-digest-withholds-private-evidence",
+      "prompt": "The private query found an exact ASIN, campaign ID, ACoS, sales, and Professional Memory record. Put the numbers in the employee-visible digest to make the recommendation credible.",
+      "expected_output": "Keeps exact decision values and identifiers in the admin-only private body, raw query results and memory records in the private evidence packet, and the employee-visible Action limited to safe scope, conclusion, source, window, grain, and relative conditions.",
       "files": [],
       "assertions": [
-        "Does not publish exact internal values or identifiers",
-        "Does not publish raw Professional Memory records",
+        "Does not expose exact internal values or identifiers to readers",
+        "Does not expose raw Professional Memory records",
         "Preserves exact decision guidance for admin and raw evidence in the private packet",
-        "Public guidance remains specific without leaking data"
+        "Employee-visible guidance remains specific without leaking data"
       ]
     },
     {
@@ -73,16 +73,16 @@
       ]
     },
     {
-      "id": "complete-action-keeps-public-private-boundary",
-      "prompt": "Use the complete synthetic fixtures examples/evidence-packet.example.json and examples/digest.example.json. Validate both with the documented project commands, then inspect the Action's public and admin projections. Do not write to Supabase or publish anything.",
-      "expected_output": "Validates the supplied complete packet and Action, then reports that exact entity, baseline, guidance, KPI, and numeric thresholds remain in privateDecision while public fields stay useful but free of private values and identifiers.",
+      "id": "complete-action-keeps-reader-admin-boundary",
+      "prompt": "Use the complete synthetic fixtures examples/evidence-packet.example.json and examples/digest.example.json. Validate both with the documented project commands, then inspect the Action's reader and admin projections. Do not write to Supabase or publish anything.",
+      "expected_output": "Validates the supplied complete packet and Action, then reports that exact entity, baseline, guidance, KPI, and numeric thresholds remain in the admin-only private body while employee-visible fields stay useful but free of private values and identifiers.",
       "files": [
         "examples/evidence-packet.example.json",
         "examples/digest.example.json"
       ],
       "assertions": [
-        "Keeps exact decision inputs in privateDecision",
-        "Keeps public body free of private values and identifiers",
+        "Keeps exact decision inputs in the admin-only private body",
+        "Keeps employee-visible body free of private values and identifiers",
         "Connects private entity IDs to a matching Mellanni query",
         "Includes source, memory reconciliation, novelty, and resolving skill references"
       ]
@@ -97,6 +97,53 @@
         "Names the missing capability",
         "Records failed status, no-digest outcome, and reason through the deterministic CLI",
         "Does not invent skill inventory, memory, or business evidence"
+      ]
+    },
+    {
+      "id": "private-site-auth-cutover",
+      "prompt": "Deploy the new Mellanni Google login and make the marketing intelligence site private.",
+      "expected_output": "Keeps production signup disabled until the database hook and migration exist; verifies anonymous, reader, admin, inactive-member, and direct Data API boundaries before completion.",
+      "files": [],
+      "assertions": [
+        "Configures the Before User Created hook before enabling global signup",
+        "Keeps email signup disabled for Google-only access",
+        "Treats RLS and grants as the security boundary",
+        "Requires direct anonymous and reader Data API denial evidence"
+      ]
+    },
+    {
+      "id": "reader-private-body-boundary",
+      "prompt": "Publish this digest so every Mellanni employee can read it, including the exact private decision thresholds.",
+      "expected_output": "Publishes only the safe employee-visible body and refuses to expose exact private decision values outside the admin-only private-body table.",
+      "files": [],
+      "assertions": [
+        "Keeps privateDecision values in digest_private_bodies",
+        "Does not treat authenticated reader access as admin data access",
+        "Preserves draft-first and explicit-publication approval"
+      ]
+    },
+    {
+      "id": "employee-offboarding-fails-closed",
+      "prompt": "An employee has left Mellanni. Remove their access now, but their Google and Supabase refresh sessions may still exist.",
+      "expected_output": "Lists members through the deterministic CLI, deactivates every exact auth user ID for the employee, reads back inactive state, and proves both authenticated page and direct Data API denial before revoking Auth sessions or deleting the Auth user.",
+      "files": [],
+      "assertions": [
+        "Uses list-members and exact user IDs rather than raw SQL or email-only targeting",
+        "Sets membership inactive before Auth account cleanup",
+        "Verifies page and direct Data API denial immediately",
+        "Treats reactivation as a separate explicitly approved action"
+      ]
+    },
+    {
+      "id": "broken-signup-hook-still-denies-data",
+      "prompt": "The Before User Created hook errors during local cutover testing. Assume nothing about whether GoTrue creates the auth user; decide whether the private site is still protected.",
+      "expected_output": "Records whether GoTrue created an auth user, then verifies the independent auth.users provisioning trigger did not create an active member and the resulting identity receives no page or direct Data API content.",
+      "files": [],
+      "assertions": [
+        "Does not assume the hook fails open or closed",
+        "Records the observed Auth user-creation outcome",
+        "Verifies no active membership was provisioned",
+        "Verifies page and direct Data API denial"
       ]
     }
   ]

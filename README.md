@@ -1,7 +1,7 @@
 # Mellanni Marketing Intelligence
 
 This is one repository: Python collection and content tools live at root, the
-Next.js publication site lives in `website/`, and Supabase schema/config lives
+Next.js private company site lives in `website/`, and Supabase schema/config lives
 in `supabase/`.
 
 Agents working in this repository must read `AGENTS.md` and the linked
@@ -103,7 +103,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supa
   --evidence-packet examples/evidence-packet.example.json
 ```
 
-Add `--manifest journal/<run>/manifest.json` to attach collection plus private evidence packet to private run record. Public digest receives no exact internal metrics, identifiers, query results, or Professional Memory records. Add `--publish` only for explicitly approved direct publication; normal flow is draft first, then publish from `/admin`.
+Add `--manifest journal/<run>/manifest.json` to attach collection plus private evidence packet to private run record. Employee-visible digest receives no exact internal metrics, identifiers, query results, or Professional Memory records. Add `--publish` only for explicitly approved direct publication; normal flow is draft first, then publish from `/admin`.
 
 Record any collection run independently, including failures that never produce a digest:
 
@@ -129,7 +129,24 @@ NEXT_PUBLIC_SUPABASE_URL=https://PROJECT_REF.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 ```
 
-Public pages read published digests dynamically. `/admin` authenticates `sergey@mellanni.com`, manages enabled/paused sources, and promotes drafts to published status without redeploying the site.
+Every content page requires an active Mellanni Google session. Readers see published safe digest bodies. Admin role remains separate and controls sources, drafts, runs, publication, and private decision bodies.
+
+## Company authentication
+
+Website uses Supabase Auth with Google OAuth and cookie-based SSR. The Google `hd=mellanni.com` request hint improves account selection but is not authorization. Database hook, membership trigger, OAuth-method check, grants, and RLS enforce exact company access.
+
+Local Supabase Google configuration reads ignored values:
+
+```dotenv
+SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=google-web-client-id
+SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET=google-web-client-secret
+```
+
+Production setup requires a Google Web OAuth client, its Supabase callback URI, the production site origin, Supabase `/auth/callback/` redirect allowlist, Google provider settings, and the Before User Created database hook. Never store the Google secret in Vercel browser variables or this repository.
+
+Safe release order: configure Google while signup is closed; apply reviewed schema/RLS; configure and verify signup hook; deploy private website; only then enable global signup and re-run rejected/accepted signup checks. Keep email signup disabled. See the operator skill's **Authentication configuration** section for exact verification gates.
+
+Offboarding is immediate and deterministic: run `list-members --all`, then `set-member-state --user-id USER_UUID --state inactive`, read back the inactive row, and verify page plus direct Data API denial. Revoke Auth sessions or delete the Auth user only after membership denial is proven. Never target offboarding by email alone because linked or duplicate auth identities may share an address.
 
 ## Manifest observability
 

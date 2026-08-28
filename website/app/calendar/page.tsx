@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description: "Browse Mellanni Marketing Intelligence weekly digests by publication date.",
 };
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export default async function CalendarPage() {
   const digests = await getPublishedDigests();

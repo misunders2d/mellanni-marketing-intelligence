@@ -14,9 +14,12 @@ from mellanni_marketing_intelligence.supabase_content import (
     digest_to_row,
     fetch_enabled_sources,
     list_digests,
+    list_members,
     list_sources,
+    push_digest,
     record_run,
     set_digest_state,
+    set_member_state,
     set_source_state,
     source_document_to_row,
     source_rows_to_config,
@@ -284,6 +287,28 @@ class SupabaseContentTests(unittest.TestCase):
             digest["actions"][0]["privateDecision"],
         )
 
+    @patch("mellanni_marketing_intelligence.supabase_content._request_json")
+    def test_digest_push_uses_atomic_private_body_rpc(self, request_json) -> None:
+        request_json.return_value = [
+            {"id": "digest-id", "slug": "weekly-intelligence-brief", "status": "draft"}
+        ]
+        digest, packet = example_documents()
+
+        stored = push_digest(
+            "https://example.supabase.co",
+            "secret",
+            digest,
+            publish=False,
+            evidence_packet=packet,
+        )
+
+        self.assertEqual(stored["id"], "digest-id")
+        self.assertEqual(request_json.call_args.args[2], "rpc/upsert_digest_with_private_body")
+        payload = request_json.call_args.kwargs["payload"]
+        self.assertIn("p_body", payload)
+        self.assertIn("p_private_body", payload)
+        self.assertNotIn("private_body", payload["p_body"])
+
     def test_public_digest_rejects_exact_private_values_and_identifiers(self) -> None:
         digest, packet = example_documents()
         digest["actions"][0]["mellanniEvidence"]["entityScope"] = "ASIN B012345678"
@@ -371,6 +396,70 @@ class SupabaseContentTests(unittest.TestCase):
         )
         self.assertIn("status=eq.published", request_json.call_args.args[2])
 
+    @patch("mellanni_marketing_intelligence.supabase_content._request_json")
+    def test_list_digests_joins_private_body_by_digest_id(self, request_json) -> None:
+        request_json.side_effect = [
+            [{"id": "digest-id", "slug": "weekly-brief", "status": "draft"}],
+            [{"digest_id": "digest-id", "private_body": {"actions": ["private"]}}],
+        ]
+
+        rows = list_digests(
+            "https://example.supabase.co", "secret", status="draft"
+        )
+
+        self.assertEqual(rows[0]["private_body"], {"actions": ["private"]})
+        self.assertIn("digest_private_bodies", request_json.call_args_list[1].args[2])
+
+    @patch("mellanni_marketing_intelligence.supabase_content._request_json")
+    def test_list_digests_rejects_missing_private_body(self, request_json) -> None:
+        request_json.side_effect = [
+            [{"id": "digest-id", "slug": "weekly-brief", "status": "draft"}],
+            [],
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "without matching private body"):
+            list_digests("https://example.supabase.co", "secret", status="draft")
+
+    @patch("mellanni_marketing_intelligence.supabase_content._request_json", return_value=[])
+    def test_list_members_defaults_to_active_only(self, request_json) -> None:
+        self.assertEqual(
+            list_members(
+                "https://example.supabase.co", "secret", include_inactive=False
+            ),
+            [],
+        )
+        self.assertIn("active=eq.true", request_json.call_args.args[2])
+
+    @patch("mellanni_marketing_intelligence.supabase_content._request_json")
+    def test_member_can_be_deactivated_by_exact_user_id(self, request_json) -> None:
+        request_json.return_value = [
+            {
+                "user_id": "11111111-1111-1111-1111-111111111111",
+                "email": "reader@mellanni.com",
+                "active": False,
+            }
+        ]
+
+        member = set_member_state(
+            "https://example.supabase.co",
+            "secret",
+            "11111111-1111-1111-1111-111111111111",
+            active=False,
+        )
+
+        self.assertFalse(member["active"])
+        self.assertEqual(request_json.call_args.kwargs["payload"], {"active": False})
+        self.assertIn("11111111-1111-1111-1111-111111111111", request_json.call_args.args[2])
+
+    def test_member_state_requires_uuid(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be a UUID"):
+            set_member_state(
+                "https://example.supabase.co",
+                "secret",
+                "reader@mellanni.com",
+                active=False,
+            )
+
     @patch(
         "mellanni_marketing_intelligence.supabase_content._request_json",
         return_value=[{"slug": "weekly-brief", "status": "draft"}],
@@ -396,6 +485,20 @@ class SupabaseContentTests(unittest.TestCase):
             .parse_args(["set-digest-state", "--slug", "weekly", "--state", "published"])
             .state,
             "published",
+        )
+        self.assertEqual(
+            build_parser()
+            .parse_args(
+                [
+                    "set-member-state",
+                    "--user-id",
+                    "11111111-1111-1111-1111-111111111111",
+                    "--state",
+                    "inactive",
+                ]
+            )
+            .state,
+            "inactive",
         )
         self.assertEqual(
             build_parser()

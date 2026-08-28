@@ -19,11 +19,15 @@ enabled = false
 enabled = true
 site_url = "https://mellanni-marketing-insights.vercel.app"
 additional_redirect_urls = [
-  "https://mellanni-marketing-insights.vercel.app/admin",
+  "https://mellanni-marketing-insights.vercel.app/auth/callback/**",
   "http://127.0.0.1:3000/**",
 ]
-enable_signup = false
+enable_signup = true
 enable_anonymous_sign_ins = false
+
+[auth.hook.before_user_created]
+enabled = true
+uri = "pg-functions://postgres/public/hook_restrict_signup_by_email_domain"
 
 [auth.email]
 enable_signup = false
@@ -31,6 +35,12 @@ double_confirm_changes = true
 enable_confirmations = true
 max_frequency = "1m"
 otp_length = 8
+
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET)"
+skip_nonce_check = false
 
 [auth.mfa]
 max_enrolled_factors = 10

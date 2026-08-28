@@ -2,7 +2,7 @@ import Link from "next/link";
 import { DigestCard } from "@/components/digest-card";
 import { getPublishedDigests } from "@/lib/supabase-public";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const digests = await getPublishedDigests();

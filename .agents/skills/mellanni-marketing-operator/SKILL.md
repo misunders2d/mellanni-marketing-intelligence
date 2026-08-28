@@ -1,6 +1,6 @@
 ---
 name: mellanni-marketing-operator
-description: Operate and maintain the Mellanni Marketing Intelligence repository, including live Supabase sources, command-run collection and digest creation, publication state, YouTube summaries, website checks, and deployment. Use only inside this repository.
+description: Operate and maintain the Mellanni Marketing Intelligence repository, including private company authentication and access control, live Supabase sources, command-run collection and digest creation, publication state, YouTube summaries, website checks, and deployment. Use only inside this repository.
 ---
 
 # Mellanni Marketing Operator
@@ -24,7 +24,8 @@ Read [references/editorial-contract.md](references/editorial-contract.md) before
 - Every included Action or External Signal must reconcile against Professional Memory. Do not mutate Professional Memory during digest generation.
 - If Mellanni skill inventory/load or Professional Memory search/get capability is absent, stop synthesis, record the manifest with `record-run --outcome no-digest --reason ...`, and report the missing capability. Never substitute general knowledge.
 - Actions are Mellanni-specific and backed by private queried Mellanni evidence. External Signals remain included when useful even if no Mellanni evidence exists.
-- Public digest must contain no private values, account identifiers, query results, or Professional Memory records. Exact decision values go to admin-only `private_body`; raw evidence stays only in private run packet.
+- Employee-visible digest `body` must contain no private values, account identifiers, query results, or Professional Memory records. Exact decision values go to admin-only `digest_private_bodies`; raw evidence stays only in private run packet.
+- Website access requires active `@mellanni.com` membership plus Google OAuth. Anonymous and non-OAuth sessions receive no content. Reader and admin database access stays enforced by RLS, not redirect logic.
 - Use direct evidence URLs in digest snapshot. Do not present external claims as Mellanni results.
 - Use external temporary directory for every run. Never place fetched source text or generated digest artifacts in Git.
 
@@ -37,4 +38,4 @@ Read [references/editorial-contract.md](references/editorial-contract.md) before
 
 ## Completion evidence
 
-Report exact source count, manifest status/counts, digest slug/status, public readback when published, checks run, and any skipped live step. Never report success from a write response alone; read back resulting source/digest state.
+Report exact source count, manifest status/counts, digest slug/status, authenticated reader readback when published, checks run, and any skipped live step. Never report success from a write response alone; read back resulting source/digest state.

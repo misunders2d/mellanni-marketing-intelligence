@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AuthControls } from "@/components/auth-controls";
 
 const navigation = [
   { href: "/", label: "Home" },
@@ -15,15 +16,18 @@ export function SiteHeader() {
           <span className="wordmark-kicker">Mellanni</span>
           <span className="wordmark-title">Marketing Intelligence</span>
         </Link>
-        <nav aria-label="Primary navigation">
-          <ul className="nav-list">
-            {navigation.map((item) => (
-              <li key={item.href}>
-                <Link href={item.href}>{item.label}</Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        <div className="header-actions">
+          <nav aria-label="Primary navigation">
+            <ul className="nav-list">
+              {navigation.map((item) => (
+                <li key={item.href}>
+                  <Link href={item.href}>{item.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <AuthControls />
+        </div>
       </div>
     </header>
   );

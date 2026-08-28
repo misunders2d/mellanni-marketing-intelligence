@@ -13,7 +13,7 @@ type DigestPageProps = {
   params: Promise<{ slug: string }>;
 };
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 function SourceLinks({ ids, sources }: { ids: readonly string[]; sources: readonly DigestSource[] }) {
   const selected = ids.flatMap((id) => {

@@ -10,7 +10,7 @@ Before collecting sources, changing live content, deploying, or maintaining this
 
 - `src/mellanni_marketing_intelligence/`: deterministic collection and Supabase content CLI.
 - `scripts/`: standalone helpers, including Gemini YouTube summary.
-- `website/`: Next.js public site and authenticated admin UI.
+- `website/`: Next.js private company site with reader and admin tiers.
 - `supabase/`: schema, RLS, grants, and local CLI config.
 - `config/sources.json`: offline test fixture only. Supabase is live source authority.
 - `schemas/`: private evidence-packet and validated digest-input JSON Schemas.
@@ -35,12 +35,14 @@ Do not use bare system `python`; digest validation depends on locked packages in
 - Source removal means pause. Published digest removal means return to draft. Hard deletion needs explicit user approval and is not exposed by normal CLI.
 - New or updated digest defaults to draft. Publish only when user explicitly requests publication.
 - Put fetched pages, manifests, draft JSON, screenshots, and other run artifacts in a unique external temporary directory. Never commit or publish them. Delete them after verified DB write/readback.
-- Public site contains no exact Mellanni metric, account identifier, query result, or Professional Memory record. Authenticated admin may read the separate private decision guide; anonymous readers receive public `body` columns only.
+- Anonymous users receive no site or database content. Active Google-authenticated `@mellanni.com` readers receive published safe `body` columns only. Admins may also read the separate `digest_private_bodies` table and operate sources, drafts, and runs.
 - Preserve existing unrelated working-tree changes. Do not create extra repos or worktrees.
 
 ## Verification
 
 - Python: `UV_CACHE_DIR=/tmp/uv-cache uv run python -m unittest discover -s tests -v`
 - Website: from `website/`, run `npm run typecheck`, `npm run lint`, and `npm run build`.
+- Auth boundary: verify anonymous page redirect plus anonymous REST denial, reader denial for private/admin tables, admin access, and inactive-member denial.
+- Offboarding: use `supabase_content list-members --all` and `set-member-state --user-id ... --state inactive`; never mutate membership with raw SQL or target email alone. Prove denial before Auth session/account cleanup.
 - User-visible changes also need rendered desktop/mobile checks before completion.
 - Do not commit or push until requested review/approval gate is satisfied.

@@ -11,6 +11,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+from uuid import UUID
 
 from .editorial import (
     private_digest_body,
@@ -34,8 +35,9 @@ SOURCE_FIELDS = (
 )
 SOURCE_ADMIN_FIELDS = SOURCE_FIELDS + ",enabled,updated_at"
 DIGEST_ADMIN_FIELDS = (
-    "id,slug,published_on,status,title,summary,body,private_body,updated_at"
+    "id,slug,published_on,status,title,summary,body,updated_at"
 )
+MEMBER_ADMIN_FIELDS = "user_id,email,role,active,updated_at"
 
 
 def _env_value(name: str, env_file: Path) -> str:
@@ -289,13 +291,13 @@ def push_digest(
         publish=publish,
         evidence_packet=evidence_packet,
     )
+    payload = {f"p_{field}": value for field, value in row.items()}
     rows = _request_json(
         base_url,
         key,
-        "digests?on_conflict=slug",
+        "rpc/upsert_digest_with_private_body",
         method="POST",
-        payload=row,
-        prefer="resolution=merge-duplicates,return=representation",
+        payload=payload,
     )
     if not isinstance(rows, list) or len(rows) != 1:
         raise RuntimeError("Supabase digest upsert did not return exactly one row")
@@ -310,6 +312,33 @@ def list_digests(base_url: str, key: str, *, status: str) -> list[dict[str, Any]
     rows = _request_json(base_url, key, path)
     if not isinstance(rows, list):
         raise RuntimeError("Supabase digests response was not a list")
+    if not rows:
+        return rows
+
+    private_rows = _request_json(
+        base_url,
+        key,
+        "digest_private_bodies?select=digest_id,private_body",
+    )
+    if not isinstance(private_rows, list):
+        raise RuntimeError("Supabase private digest bodies response was not a list")
+    private_by_digest = {
+        row["digest_id"]: row["private_body"]
+        for row in private_rows
+        if isinstance(row, dict) and "digest_id" in row and "private_body" in row
+    }
+    missing_private_bodies = {
+        row.get("id")
+        for row in rows
+        if isinstance(row, dict) and row.get("id") not in private_by_digest
+    }
+    if missing_private_bodies:
+        raise RuntimeError(
+            "Supabase returned digests without matching private body rows"
+        )
+    for row in rows:
+        if isinstance(row, dict):
+            row["private_body"] = private_by_digest[row["id"]]
     return rows
 
 
@@ -332,6 +361,42 @@ def set_digest_state(base_url: str, key: str, slug: str, *, status: str) -> dict
     )
     if not isinstance(rows, list) or len(rows) != 1:
         raise RuntimeError(f"digest {slug!r} was not found")
+    return rows[0]
+
+
+def list_members(base_url: str, key: str, *, include_inactive: bool) -> list[dict[str, Any]]:
+    path = "members?select=" + MEMBER_ADMIN_FIELDS
+    if not include_inactive:
+        path += "&active=eq.true"
+    path += "&order=email.asc"
+    rows = _request_json(base_url, key, path)
+    if not isinstance(rows, list):
+        raise RuntimeError("Supabase members response was not a list")
+    return rows
+
+
+def set_member_state(
+    base_url: str,
+    key: str,
+    user_id: str,
+    *,
+    active: bool,
+) -> dict[str, Any]:
+    try:
+        normalized_user_id = str(UUID(user_id))
+    except ValueError as exc:
+        raise ValueError("member user ID must be a UUID") from exc
+
+    rows = _request_json(
+        base_url,
+        key,
+        "members?user_id=eq." + quote(normalized_user_id, safe=""),
+        method="PATCH",
+        payload={"active": active},
+        prefer="return=representation",
+    )
+    if not isinstance(rows, list) or len(rows) != 1:
+        raise RuntimeError(f"member {normalized_user_id!r} was not found")
     return rows[0]
 
 
@@ -415,6 +480,13 @@ def build_parser() -> argparse.ArgumentParser:
     digest_state_parser = subparsers.add_parser("set-digest-state")
     digest_state_parser.add_argument("--slug", required=True)
     digest_state_parser.add_argument("--state", choices=("draft", "published"), required=True)
+
+    member_list_parser = subparsers.add_parser("list-members")
+    member_list_parser.add_argument("--all", action="store_true")
+
+    member_state_parser = subparsers.add_parser("set-member-state")
+    member_state_parser.add_argument("--user-id", required=True)
+    member_state_parser.add_argument("--state", choices=("active", "inactive"), required=True)
 
     validate_parser = subparsers.add_parser("validate-digest")
     validate_parser.add_argument("--input", type=Path, required=True)
@@ -500,6 +572,29 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "set-digest-state":
             digest = set_digest_state(base_url, key, args.slug, status=args.state)
             print(json.dumps({"slug": digest.get("slug"), "status": digest.get("status")}))
+            return 0
+
+        if args.command == "list-members":
+            rows = list_members(base_url, key, include_inactive=args.all)
+            print(json.dumps({"member_count": len(rows), "members": rows}, ensure_ascii=False))
+            return 0
+
+        if args.command == "set-member-state":
+            member = set_member_state(
+                base_url,
+                key,
+                args.user_id,
+                active=args.state == "active",
+            )
+            print(
+                json.dumps(
+                    {
+                        "user_id": member.get("user_id"),
+                        "email": member.get("email"),
+                        "active": member.get("active"),
+                    }
+                )
+            )
             return 0
 
         if args.command == "record-run":

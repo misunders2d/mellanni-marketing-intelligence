@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import type { Session } from "@supabase/supabase-js";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
-
-const ADMIN_EMAIL = "sergey@mellanni.com";
 
 type SourceRow = {
   id: string;
@@ -30,6 +29,11 @@ type DigestAdminRow = {
   private_body: {
     actions?: PrivateDecisionAction[];
   } | null;
+};
+
+type DigestPrivateBodyRow = {
+  digest_id: string;
+  private_body: DigestAdminRow["private_body"];
 };
 
 type PrivateDecisionAction = {
@@ -119,19 +123,36 @@ export function AdminConsole() {
     setBusy(true);
     setError("");
 
-    const [sourceResult, digestResult] = await Promise.all([
+    const [sourceResult, digestResult, privateBodyResult] = await Promise.all([
       supabase.from("sources").select("*").order("name"),
       supabase
         .from("digests")
-        .select("id,slug,title,published_on,status,private_body")
+        .select("id,slug,title,published_on,status")
         .order("published_on", { ascending: false }),
+      supabase
+        .from("digest_private_bodies")
+        .select("digest_id,private_body"),
     ]);
 
-    if (sourceResult.error || digestResult.error) {
-      setError(sourceResult.error?.message ?? digestResult.error?.message ?? "Unable to load admin data.");
+    if (sourceResult.error || digestResult.error || privateBodyResult.error) {
+      setError(
+        sourceResult.error?.message
+          ?? digestResult.error?.message
+          ?? privateBodyResult.error?.message
+          ?? "Unable to load admin data.",
+      );
     } else {
+      const privateBodies = new Map(
+        ((privateBodyResult.data ?? []) as DigestPrivateBodyRow[])
+          .map((row) => [row.digest_id, row.private_body]),
+      );
       setSources((sourceResult.data ?? []) as SourceRow[]);
-      setDigests((digestResult.data ?? []) as DigestAdminRow[]);
+      setDigests(
+        (digestResult.data ?? []).map((digest) => ({
+          ...digest,
+          private_body: privateBodies.get(digest.id) ?? null,
+        })) as DigestAdminRow[],
+      );
     }
     setBusy(false);
   }, [supabase]);
@@ -153,23 +174,6 @@ export function AdminConsole() {
 
     return () => data.subscription.unsubscribe();
   }, [loadData, supabase]);
-
-  async function sendMagicLink(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!supabase) return;
-    setBusy(true);
-    setError("");
-    setMessage("");
-
-    const { error: authError } = await supabase.auth.signInWithOtp({
-      email: ADMIN_EMAIL,
-      options: { emailRedirectTo: window.location.origin + "/admin" },
-    });
-
-    if (authError) setError(authError.message);
-    else setMessage("Sign-in link sent to " + ADMIN_EMAIL + ".");
-    setBusy(false);
-  }
 
   async function saveSource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -258,18 +262,10 @@ export function AdminConsole() {
   if (!session) {
     return (
       <section className="admin-panel auth-panel" aria-labelledby="admin-login-title">
-        <p className="eyebrow">Admin authentication</p>
-        <h2 id="admin-login-title">Sign in by email.</h2>
-        <p>Access is restricted by database policy to {ADMIN_EMAIL}.</p>
-        <form onSubmit={sendMagicLink}>
-          <label htmlFor="admin-email">Admin email</label>
-          <input id="admin-email" type="email" value={ADMIN_EMAIL} readOnly />
-          <button className="primary-button" type="submit" disabled={busy}>
-            {busy ? "Sending…" : "Email sign-in link"}
-          </button>
-        </form>
-        {message ? <p className="form-success" role="status">{message}</p> : null}
-        {error ? <p className="form-error" role="alert">{error}</p> : null}
+        <p className="eyebrow">Session required</p>
+        <h2 id="admin-login-title">Sign in with company Google.</h2>
+        <p>Administrator role is checked by database policy.</p>
+        <Link className="primary-link" href="/login/">Go to sign in</Link>
       </section>
     );
   }
