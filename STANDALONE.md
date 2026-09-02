@@ -57,9 +57,9 @@ Create a local `.env` file in the project root:
 # Required ONLY if running YouTube summarizer script:
 GOOGLE_API_KEY=your-gemini-api-key
 
-# (Optional overrides for YouTube model)
-# YOUTUBE_SUMMARIZER_MODEL=gemini-3.1-flash-lite
-# YOUTUBE_SUMMARIZER_FALLBACK_MODEL=gemini-2.5-flash
+# (Optional overrides for YouTube model — defaults to Gemini 3.7 Flash agentic)
+# YOUTUBE_SUMMARIZER_MODEL=gemini-3.7-flash
+# YOUTUBE_SUMMARIZER_FALLBACK_MODEL=gemini-3.5-flash-lite
 ```
 
 > **Note:** Zero Supabase keys, database credentials, or website tokens are needed in standalone mode.
@@ -145,9 +145,13 @@ Output is written to `journal/<run_id>/`:
 - `journal/<run_id>/<source_slug>/<item_hash>.md` — Clean Markdown extracts of individual articles/episodes.
 
 ### Step 3: Summarize YouTube Videos (Optional)
-If a source item references a YouTube video or podcast episode:
+If a source item references a YouTube video or podcast episode, use the Gemini 3.7 Flash agentic video summarizer:
 ```bash
+# Agentic video processing (default — analyzes video understanding steps):
 node --env-file=.env scripts/youtube-summary.mjs "https://www.youtube.com/watch?v=VIDEO_ID" "Focus question or topic"
+
+# Optional static mode (for short latency-sensitive clips or frame-level coverage):
+node --env-file=.env scripts/youtube-summary.mjs "https://www.youtube.com/watch?v=VIDEO_ID" --static
 ```
 
 ---

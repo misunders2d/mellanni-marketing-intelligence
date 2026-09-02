@@ -40,7 +40,7 @@ Default output lives under ignored `journal/`. Source extracts are local artifac
 
 ## YouTube summarizer
 
-The standalone helper preserves the existing Pi Gemini YouTube summarizer's model defaults, fallback, URL validation, prompt, and multimodal request.
+The standalone helper uses Gemini 3.7 Flash agentic video understanding via the Gemini Interactions API, with fallback to Gemini 3.5 Flash Lite.
 
 Put the API key in local ignored `.env`:
 
@@ -54,7 +54,7 @@ Run:
 node --env-file=.env scripts/youtube-summary.mjs "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-Optional focus question follows the URL. Model overrides use `YOUTUBE_SUMMARIZER_MODEL` and `YOUTUBE_SUMMARIZER_FALLBACK_MODEL`.
+Optional focus question follows the URL. Add `--static` for static frame sampling. Model overrides use `YOUTUBE_SUMMARIZER_MODEL` and `YOUTUBE_SUMMARIZER_FALLBACK_MODEL`.
 
 ## Supabase content flow
 
