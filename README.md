@@ -7,6 +7,8 @@ in `supabase/`.
 Agents working in this repository must read `AGENTS.md` and the linked
 `mellanni-marketing-operator` project skill before operating live content.
 
+For agents or operators without Supabase credentials or Next.js access, see **[STANDALONE.md](STANDALONE.md)** for zero-database, zero-website execution and HTML report delivery.
+
 Install the locked Python environment once, then use `uv run` for every Python command:
 
 ```bash
