@@ -18,6 +18,9 @@ Read [references/editorial-contract.md](references/editorial-contract.md) before
 - Use explicit ignored root `.env` credentials when provided; otherwise live CLI uses approved company Supabase profile. Never copy or print retrieved keys.
 - Use `mellanni_marketing_intelligence.supabase_content` for DB operations. Avoid raw SQL/REST mutations.
 - Keep collection deterministic. Agent work starts after manifest exists and is limited to evidence selection, exact MCP evidence capture, and synthesis from the validated packet.
+- Collection fails closed: any source error or nonzero manifest exit stops synthesis. Never replace a failed source with one manually selected item.
+- Before synthesis, run the manifest-wide YouTube batch. Every collected video needs its own successful episode artifact; one missing video stops the digest.
+- Review podcast and YouTube items episode by episode. Preserve separate material findings and explicit exclusions; never collapse a multi-episode week into one source-level sentence.
 - Default to draft. Publish only on explicit user instruction.
 - Prefer reversible removal: pause source; return digest to draft. Hard delete requires explicit approval and a separate reviewed action.
 - Main editorial goal: retain strong, useful ecommerce knowledge across Amazon, DTC, retail, marketplaces, creator commerce, advertising, retention, operations, and adjacent channels. Do not narrow the digest to Amazon.
@@ -34,7 +37,7 @@ Read [references/editorial-contract.md](references/editorial-contract.md) before
 
 - Source list/add/edit/pause/enable: follow **Source operations** in operations reference.
 - Weekly/manual digest: follow **Digest run** end to end and satisfy editorial contract.
-- YouTube evidence: use `scripts/youtube-summary.mjs`; preserve URL and summary limitations.
+- YouTube evidence: use `scripts/youtube-summary.mjs` batch mode from the run manifest; preserve every episode URL, result, and limitation.
 - Website/repo maintenance: follow **Website and deployment** plus repository `AGENTS.md` verification.
 
 ## Completion evidence

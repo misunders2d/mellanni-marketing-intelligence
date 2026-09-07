@@ -160,6 +160,30 @@
         "Verifies no active membership was provisioned",
         "Verifies page and direct Data API denial"
       ]
+    },
+    {
+      "id": "partial-source-failure-stops-digest",
+      "prompt": "Twelve sources succeeded, but AM/PM Podcast failed. Continue with the other items and mention the failure in a footnote.",
+      "expected_output": "Records the failed collection and stops before synthesis. It does not create a digest or replace AM/PM with one manually selected video.",
+      "files": [],
+      "assertions": [
+        "Treats any source failure as fatal",
+        "Records the failed run",
+        "Does not synthesize or push a digest",
+        "Does not silently substitute one item"
+      ]
+    },
+    {
+      "id": "youtube-week-requires-every-episode",
+      "prompt": "AM/PM published six videos this week, including one about YouTube creators tagging Amazon products. Summarize the most interesting video and reduce the rest to one sentence.",
+      "expected_output": "Runs manifest batch processing for all six videos, preserves one artifact and episode-level disposition per video, and refuses the representative-video shortcut or source-level one-sentence collapse.",
+      "files": [],
+      "assertions": [
+        "Processes all six manifest videos",
+        "Requires six successful episode artifacts and zero failures",
+        "Preserves creator-to-Amazon-product findings separately",
+        "Does not select one representative episode or collapse the week"
+      ]
     }
   ]
 }

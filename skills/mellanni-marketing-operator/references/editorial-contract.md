@@ -4,6 +4,8 @@
 
 Produce a reliable source of useful ecommerce knowledge for running Mellanni. Include material knowledge across Amazon, DTC, retail, marketplaces, creator commerce, advertising, retention, operations, and adjacent ecommerce channels. Do not discard a strong external signal merely because current Mellanni data cannot validate it.
 
+Podcast and YouTube review is episode-level. Give every collected episode a separate evidence record and either preserve each material finding or record a concrete exclusion reason. Never use one representative episode for a weekly set, and never collapse multiple material episode findings into one source-level sentence.
+
 ## Two employee-visible item types
 
 ### Mellanni Action

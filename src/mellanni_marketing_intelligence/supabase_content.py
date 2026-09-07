@@ -9,7 +9,7 @@ import re
 import subprocess
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 from uuid import UUID
 
@@ -443,6 +443,32 @@ def record_run(
     )
 
 
+def require_digest_ready_manifest(manifest: dict[str, Any]) -> None:
+    if int(manifest.get("exit_code", 1)) != 0:
+        raise ValueError(
+            f"refusing digest write: collection failed (exit_code={manifest.get('exit_code')})"
+        )
+    youtube_count = sum(
+        1
+        for item in manifest.get("items") or []
+        if urlsplit(str(item.get("url", ""))).netloc.lower().removeprefix("www.")
+        in {"youtube.com", "youtu.be"}
+    )
+    if youtube_count:
+        summary = manifest.get("youtube_summary") or {}
+        if (
+            summary.get("status") != "succeeded"
+            or int(summary.get("expected", -1)) != youtube_count
+            or int(summary.get("succeeded", -1)) != youtube_count
+            or int(summary.get("failed", -1)) != 0
+        ):
+            raise ValueError(
+                f"refusing digest write: YouTube coverage incomplete "
+                f"(expected={youtube_count}, succeeded={summary.get('succeeded')}, "
+                f"failed={summary.get('failed')})"
+            )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Exchange Mellanni source configuration and digests with Supabase"
@@ -469,7 +495,7 @@ def build_parser() -> argparse.ArgumentParser:
     push_parser = subparsers.add_parser("push-digest")
     push_parser.add_argument("--input", type=Path, required=True)
     push_parser.add_argument("--evidence-packet", type=Path, required=True)
-    push_parser.add_argument("--manifest", type=Path)
+    push_parser.add_argument("--manifest", type=Path, required=True)
     push_parser.add_argument("--publish", action="store_true")
 
     digest_list_parser = subparsers.add_parser("list-digests")
@@ -625,6 +651,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
+        manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+        require_digest_ready_manifest(manifest)
         document = json.loads(args.input.read_text(encoding="utf-8"))
         evidence_packet = json.loads(
             args.evidence_packet.read_text(encoding="utf-8")
@@ -636,16 +664,14 @@ def main(argv: list[str] | None = None) -> int:
             publish=args.publish,
             evidence_packet=evidence_packet,
         )
-        if args.manifest:
-            manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-            record_run(
-                base_url,
-                key,
-                manifest,
-                digest_id=digest.get("id"),
-                evidence_packet=evidence_packet,
-                outcome="digest",
-            )
+        record_run(
+            base_url,
+            key,
+            manifest,
+            digest_id=digest.get("id"),
+            evidence_packet=evidence_packet,
+            outcome="digest",
+        )
         print(json.dumps({"digest_id": digest.get("id"), "slug": digest.get("slug"), "status": digest.get("status")}))
         return 0
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:

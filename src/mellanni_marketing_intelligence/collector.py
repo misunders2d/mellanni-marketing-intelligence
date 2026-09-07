@@ -126,6 +126,13 @@ def _child_text(node: ET.Element, names: set[str]) -> str:
     return ""
 
 
+def _descendant_text(node: ET.Element, names: set[str]) -> str:
+    for child in node.iter():
+        if child is not node and _local_name(child.tag) in names:
+            return "".join(child.itertext()).strip()
+    return ""
+
+
 def _entry_link(node: ET.Element) -> str:
     for child in list(node):
         if _local_name(child.tag) != "link":
@@ -168,7 +175,7 @@ def parse_feed(document: str, base_url: str) -> list[_RawEntry]:
         if not url.startswith(("http://", "https://")):
             continue
         published = _child_text(node, {"pubdate", "published", "updated", "date"})
-        summary = _child_text(node, {"description", "summary", "content", "encoded"})
+        summary = _descendant_text(node, {"description", "summary", "content", "encoded"})
         entries.append(_RawEntry(_clean_text(title), canonical_url(url), parse_date(published), html_to_text(summary)))
     return entries
 
@@ -239,11 +246,12 @@ def collect_source(source: Source, since_days: int, fetcher: Fetch = fetch_url) 
     cutoff = datetime.now(UTC) - timedelta(days=since_days)
     home_document = ""
     home_fetch_failed = False
+    home_fetch_error = ""
     try:
         home_document, _ = fetcher(source.home_url)
     except Exception as exc:  # explicit feeds can still keep source operational
         home_fetch_failed = True
-        status.errors.append(f"home fetch failed: {type(exc).__name__}: {exc}")
+        home_fetch_error = f"home fetch failed: {type(exc).__name__}: {exc}"
 
     index_entries, discovered_feeds = _index_entries(source, home_document) if home_document else ([], [])
     entries: list[_RawEntry] = []
@@ -290,14 +298,24 @@ def collect_source(source: Source, since_days: int, fetcher: Fetch = fetch_url) 
             f"feed_empty={probe_empty_count}; "
             f"html_index={'used' if entries else 'empty'}"
         )
-        if not entries and probe_error_count:
+        if not entries:
             status.errors.append(f"no usable feed or index; {probe_error_count} feed probe(s) failed (see warnings)")
 
+    if home_fetch_error:
+        if status.method.startswith("feed:"):
+            status.warnings.append(f"{home_fetch_error}; recovered by feed")
+        else:
+            status.errors.append(home_fetch_error)
+
     status.discovered = len(entries)
+    eligible_entries = [entry for entry in entries if _within_window(entry.published_at, cutoff)]
+    status.item_limit_truncated = max(0, len(eligible_entries) - source.max_items)
+    if status.item_limit_truncated:
+        status.errors.append(
+            f"item limit truncated {status.item_limit_truncated} of {len(eligible_entries)} eligible item(s)"
+        )
     accepted: list[ContentItem] = []
-    for entry in entries:
-        if len(accepted) >= source.max_items or not _within_window(entry.published_at, cutoff):
-            continue
+    for entry in eligible_entries[: source.max_items]:
         page_text = ""
         try:
             page_document, content_type = fetcher(entry.url)

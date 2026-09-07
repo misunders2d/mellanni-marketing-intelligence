@@ -42,6 +42,7 @@ class SourceStatus:
     feed_candidates_total: int = 0
     feed_candidates_probed: int = 0
     feed_candidates_truncated: int = 0
+    item_limit_truncated: int = 0
     fallback_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:

@@ -4,6 +4,8 @@ import hashlib
 import json
 import tempfile
 import unittest
+from datetime import UTC, datetime
+from email.utils import format_datetime
 from pathlib import Path
 
 from mellanni_marketing_intelligence.collector import Fetch, canonical_url, parse_feed
@@ -14,13 +16,14 @@ HOME = "https://example.com/"
 FEED = "https://example.com/feed.xml"
 ARTICLE = "https://example.com/articles/useful-test"
 FAILED_FEED = "https://example.com/broken.xml"
+RECENT_RFC822 = format_datetime(datetime.now(UTC))
 
 
 def fake_fetch(url: str) -> tuple[str, str]:
     documents = {
         HOME: ('<html><head><link rel="alternate" type="application/rss+xml" href="/feed.xml"></head></html>', "text/html"),
         FEED: (
-            """<?xml version="1.0"?><rss><channel><item><title>Useful conversion test</title><link>https://example.com/articles/useful-test?utm_source=x</link><pubDate>Tue, 25 Aug 2026 12:00:00 GMT</pubDate><description><![CDATA[Measured test summary.]]></description></item></channel></rss>""",
+            f"""<?xml version="1.0"?><rss><channel><item><title>Useful conversion test</title><link>https://example.com/articles/useful-test?utm_source=x</link><pubDate>{RECENT_RFC822}</pubDate><description><![CDATA[Measured test summary.]]></description></item></channel></rss>""",
             "application/rss+xml",
         ),
         ARTICLE: ("<html><body><article><h1>Useful conversion test</h1><p>Brand changed one listing image and measured a 14 percent conversion lift against a matched baseline.</p></article></body></html>", "text/html"),
@@ -62,6 +65,11 @@ class PipelineTests(unittest.TestCase):
         entries = parse_feed(document, FEED)
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0].url, ARTICLE)
+
+    def test_parse_youtube_feed_keeps_nested_media_description(self) -> None:
+        document = """<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><entry><title>Episode</title><link rel="alternate" href="https://www.youtube.com/watch?v=abc"/><published>2026-09-07T00:00:00Z</published><media:group><media:description>Creator tags Amazon products.</media:description></media:group></entry></feed>"""
+        entries = parse_feed(document, "https://www.youtube.com/feeds/videos.xml")
+        self.assertEqual(entries[0].summary, "Creator tags Amazon products.")
 
     def test_fetch_writes_local_journal(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -249,6 +257,83 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(status["errors"], [])
             self.assertTrue(any("returned no entries" in warning for warning in status["warnings"]))
             self.assertEqual(status["accepted"], 1)
+
+    def test_empty_source_is_fatal(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = self._write_config(root, feed_urls=[FEED])
+
+            def fetch(url: str) -> tuple[str, str]:
+                if url == HOME:
+                    return "<html></html>", "text/html"
+                return "<rss><channel></channel></rss>", "application/rss+xml"
+
+            manifest = self._run(root, config, fetch)
+            self.assertEqual(manifest["source_failures"], 1)
+            self.assertEqual(manifest["exit_code"], 2)
+            self.assertIn("no usable feed or index", manifest["source_statuses"][0]["errors"][0])
+
+    def test_item_limit_truncation_is_fatal(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = self._write_config(root, feed_urls=[FEED], max_items=1)
+            feed = f"""<rss><channel>
+            <item><title>Useful article one</title><link>https://example.com/articles/one</link><pubDate>{RECENT_RFC822}</pubDate><description>One</description></item>
+            <item><title>Useful article two</title><link>https://example.com/articles/two</link><pubDate>{RECENT_RFC822}</pubDate><description>Two</description></item>
+            </channel></rss>"""
+
+            def fetch(url: str) -> tuple[str, str]:
+                if url == HOME:
+                    return "<html></html>", "text/html"
+                if url == FEED:
+                    return feed, "application/rss+xml"
+                return "<article>Full article.</article>", "text/html"
+
+            manifest = self._run(root, config, fetch)
+            status = manifest["source_statuses"][0]
+            self.assertEqual(status["accepted"], 1)
+            self.assertEqual(status["item_limit_truncated"], 1)
+            self.assertEqual(manifest["exit_code"], 2)
+
+    def test_one_failed_source_fails_run_even_when_another_source_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / "sources.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "sources": [
+                            {
+                                "slug": "good",
+                                "name": "Good",
+                                "home_url": HOME,
+                                "feed_urls": [FEED],
+                                "priority": "A",
+                                "why": "test",
+                                "include_patterns": ["/articles/"],
+                            },
+                            {
+                                "slug": "broken",
+                                "name": "Broken",
+                                "home_url": "https://broken.example/",
+                                "priority": "A",
+                                "why": "test",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def fetch(url: str) -> tuple[str, str]:
+                if "broken.example" in url:
+                    raise OSError("source unavailable")
+                return fake_fetch(url)
+
+            manifest = self._run(root, config, fetch)
+            self.assertEqual(manifest["item_count"], 1)
+            self.assertEqual(manifest["source_failures"], 1)
+            self.assertEqual(manifest["exit_code"], 2)
 
     def test_manifest_v2_records_stable_run_parameters(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

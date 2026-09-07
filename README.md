@@ -17,12 +17,12 @@ UV_CACHE_DIR=/tmp/uv-cache uv sync --locked
 
 Fetch-only pipeline for Plane project `MKT-1`:
 
-1. Collect recent items from the 12-source pilot registry.
+1. Collect recent items from the live source registry.
 2. Normalize fetched page/feed text.
 3. Write one Markdown file per item under ignored local `journal/<run>/`.
 4. Write a machine-readable manifest with source health and item paths.
 
-The fetch pipeline does not start agents, score content, summarize findings, schedule jobs, or deliver messages. The YouTube helper below runs only when explicitly invoked.
+The fetch pipeline does not start agents, score content, schedule jobs, or deliver messages. After collection, run the YouTube helper once in manifest batch mode before analysis.
 
 ## Manual run
 
@@ -40,7 +40,7 @@ Default output lives under ignored `journal/`. Source extracts are local artifac
 
 ## YouTube summarizer
 
-The standalone helper uses Gemini 3.7 Flash agentic video understanding via the Gemini Interactions API, with fallback to Gemini 3.5 Flash Lite.
+The helper uses Gemini 3.8 Flash agentic video understanding through the Interactions API, with fallback to Gemini 3.5 Flash Lite. Requests use `store: false`.
 
 Put the API key in local ignored `.env`:
 
@@ -48,13 +48,15 @@ Put the API key in local ignored `.env`:
 GOOGLE_API_KEY=your-key
 ```
 
-Run:
+Run every YouTube video in one collection manifest. Each video gets separate JSON and Markdown output; any failure returns nonzero:
 
 ```bash
-node --env-file=.env scripts/youtube-summary.mjs "https://www.youtube.com/watch?v=VIDEO_ID"
+node --env-file=.env scripts/youtube-summary.mjs \
+  --manifest journal/RUN_ID/manifest.json \
+  --output-dir /tmp/mellanni-digest.RUN/youtube
 ```
 
-Optional focus question follows the URL. Add `--static` for static frame sampling. Model overrides use `YOUTUBE_SUMMARIZER_MODEL` and `YOUTUBE_SUMMARIZER_FALLBACK_MODEL`.
+Single-URL debugging remains supported. Optional batch focus uses `--focus`. Add `--static` for static frame sampling. Model overrides use `YOUTUBE_SUMMARIZER_MODEL` and `YOUTUBE_SUMMARIZER_FALLBACK_MODEL`.
 
 ## Supabase content flow
 
@@ -152,7 +154,7 @@ Offboarding is immediate and deterministic: run `list-members --all`, then `set-
 
 ## Manifest observability
 
-New runs use additive manifest schema v2. Existing fields keep their original names and meanings. V2 adds:
+Runs use additive manifest schema v2. Any source error now returns nonzero, so incomplete collection cannot proceed as success. V2 includes:
 
 - exact run parameters and source-config SHA-256;
 - per-source warnings, feed candidate totals, actual probe count, and truncation count;
@@ -165,6 +167,7 @@ Feed probing stays sequential and bounded. Explicit `feed_urls` are always eligi
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m unittest discover -s tests -v
+node --test tests/test_youtube_summary.mjs
 ```
 
 Weekly scheduler is not installed yet. Schedule still needs day/time confirmation.

@@ -48,7 +48,7 @@ In standalone mode, everything runs locally on disk:
 
 ### Requirements
 - **Python**: `>=3.11` (managed with `uv` or standard `venv`)
-- **Node.js**: `>=18` (for YouTube summarization script)
+- **Node.js**: `>=20.6` (for `--env-file` support in the YouTube summarization script)
 
 ### API Keys Needed
 Create a local `.env` file in the project root:
@@ -57,8 +57,8 @@ Create a local `.env` file in the project root:
 # Required ONLY if running YouTube summarizer script:
 GOOGLE_API_KEY=your-gemini-api-key
 
-# (Optional overrides for YouTube model — defaults to Gemini 3.7 Flash agentic)
-# YOUTUBE_SUMMARIZER_MODEL=gemini-3.7-flash
+# (Optional overrides for YouTube model — defaults to Gemini 3.8 Flash agentic)
+# YOUTUBE_SUMMARIZER_MODEL=gemini-3.8-flash
 # YOUTUBE_SUMMARIZER_FALLBACK_MODEL=gemini-3.5-flash-lite
 ```
 
@@ -126,7 +126,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv sync --locked
 
 Or using standard `pip`:
 ```bash
-pip install -e .
+UV_CACHE_DIR=/tmp/uv-cache uv sync --locked
 ```
 
 ### Step 2: Run Collection
@@ -144,15 +144,21 @@ Output is written to `journal/<run_id>/`:
 - `journal/<run_id>/manifest.json` — Machine-readable summary of fetched sources, counts, and status.
 - `journal/<run_id>/<source_slug>/<item_hash>.md` — Clean Markdown extracts of individual articles/episodes.
 
-### Step 3: Summarize YouTube Videos (Optional)
-If a source item references a YouTube video or podcast episode, use the Gemini 3.7 Flash agentic video summarizer:
+### Step 3: Summarize Every YouTube Video
+When the manifest contains YouTube items, run the Gemini 3.8 Flash agentic video summarizer across the full manifest. The command writes one JSON and Markdown artifact per video and exits nonzero if any video fails:
 ```bash
-# Agentic video processing (default — analyzes video understanding steps):
-node --env-file=.env scripts/youtube-summary.mjs "https://www.youtube.com/watch?v=VIDEO_ID" "Focus question or topic"
+node --env-file=.env scripts/youtube-summary.mjs \
+  --manifest journal/RUN_ID/manifest.json \
+  --output-dir /tmp/mellanni-digest.RUN/youtube
 
-# Optional static mode (for short latency-sensitive clips or frame-level coverage):
-node --env-file=.env scripts/youtube-summary.mjs "https://www.youtube.com/watch?v=VIDEO_ID" --static
+# Optional focus:
+node --env-file=.env scripts/youtube-summary.mjs \
+  --manifest journal/RUN_ID/manifest.json \
+  --output-dir /tmp/mellanni-digest.RUN/youtube \
+  --focus "FOCUS QUESTION"
 ```
+
+Require `expected == succeeded` and `failed == 0` before synthesis. Review every episode artifact separately; never substitute one representative video or collapse the week into one sentence.
 
 ---
 
@@ -188,7 +194,7 @@ To present the intelligence in a clean, professional, self-contained format that
 Write your synthesized digest to a Markdown file (e.g., `digest.md`), then run:
 
 ```bash
-python scripts/generate_html_report.py digest.md -o report.html --title "Weekly Ecommerce Intelligence Digest"
+UV_CACHE_DIR=/tmp/uv-cache uv run python scripts/generate_html_report.py digest.md -o report.html --title "Weekly Ecommerce Intelligence Digest"
 ```
 
 ### Option B: HTML Report Template Structure

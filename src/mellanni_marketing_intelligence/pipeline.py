@@ -61,7 +61,7 @@ def run_fetch(
         _, record = write_item(run_dir, item)
         item_records.append(record)
 
-    source_failures = sum(1 for status in statuses if status.accepted == 0 and status.errors)
+    source_failures = sum(1 for status in statuses if status.errors)
     manifest: dict[str, Any] = {
         "schema_version": 2,
         "run_id": run_id,
@@ -81,7 +81,7 @@ def run_fetch(
         "item_count": len(items),
         "items": item_records,
         "source_statuses": [status.to_dict() for status in statuses],
-        "exit_code": 2 if not items and source_failures == len(sources) else 0,
+        "exit_code": 2 if source_failures else 0,
     }
     write_manifest(run_dir, manifest)
     return manifest

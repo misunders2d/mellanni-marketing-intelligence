@@ -68,6 +68,17 @@
       "allowed_hosts": ["portal.9operators.com"]
     },
     {
+      "slug": "ampmpodcast",
+      "name": "AM/PM Podcast",
+      "home_url": "https://www.youtube.com/@AMPMPodcast",
+      "priority": "A",
+      "why": "Helium 10 Amazon news, tactics, tools, and operator interviews.",
+      "include_patterns": [],
+      "allowed_hosts": ["www.youtube.com", "youtu.be"],
+      "feed_urls": ["https://www.youtube.com/feeds/videos.xml?channel_id=UC34AYD6is66Xpv6HPRB0Miw"],
+      "max_items": 100
+    },
+    {
       "slug": "limited-supply",
       "name": "Limited Supply",
       "home_url": "https://visit.nik.co/limited-supply/",

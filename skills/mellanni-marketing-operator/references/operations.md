@@ -84,7 +84,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence \
   --since-days 8
 ```
 
-3. Inspect manifest before synthesis. Record complete failures, partial errors, warnings, undated/noisy content, and source coverage.
+3. Inspect manifest before synthesis. Success requires `exit_code: 0`. Any source error makes collection nonzero; record the failed run and stop. Do not manually substitute one item from a failed source.
 
 If collection failed, record the collection result once and stop:
 
@@ -126,13 +126,17 @@ UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supa
    4. Call only read tools named by loaded provider playbooks. Save exact tool name, inputs, window/grain, entity IDs, and returned result under the matching `mellanniQueries` row. Provider tools/scripts own calculations and joins.
    5. Build `$RUN_DIR/evidence-packet.json` from those machine-readable results. Preserve returned IDs and values; do not recalculate or manually join them. Validation fails when any used skill URI is absent from captured inventory.
 
-For YouTube evidence:
+For YouTube evidence, process every YouTube item in the manifest before synthesis:
 
 ```bash
-node --env-file=.env scripts/youtube-summary.mjs "YOUTUBE_URL" "FOCUS QUESTION"
+node --env-file=.env scripts/youtube-summary.mjs \
+  --manifest "$RUN_DIR/journal/RUN_ID/manifest.json" \
+  --output-dir "$RUN_DIR/youtube"
 ```
 
-Preserve video URL, summary limitations, useful tactic, and exact applicable skill reference.
+The batch writes separate JSON and Markdown for every video and updates the collection manifest with `youtube_summary`. Require `status: succeeded`, `expected == succeeded`, and `failed: 0`. Any mismatch stops the digest. Give downstream agents every episode artifact; never select one representative video.
+
+Review every podcast episode separately. If collected content contains only metadata or shallow show notes, mark that episode insufficient and stop rather than inventing episode knowledge. Preserve separate material findings and explicit exclusion reasons; never compress a multi-episode source into one sentence before episode review.
 
 6. Build private packet matching `examples/evidence-packet.example.json`. It contains exact source, memory, query, prior-digest, and skill evidence. Validate before synthesis:
 

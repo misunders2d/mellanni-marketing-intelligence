@@ -18,6 +18,7 @@ from mellanni_marketing_intelligence.supabase_content import (
     list_sources,
     push_digest,
     record_run,
+    require_digest_ready_manifest,
     set_digest_state,
     set_member_state,
     set_source_state,
@@ -42,6 +43,34 @@ def example_documents() -> tuple[dict, dict]:
 
 
 class SupabaseContentTests(unittest.TestCase):
+    def test_digest_manifest_rejects_failed_collection(self) -> None:
+        with self.assertRaisesRegex(ValueError, "collection failed"):
+            require_digest_ready_manifest({"exit_code": 2, "items": []})
+
+    def test_digest_manifest_requires_every_youtube_summary(self) -> None:
+        manifest = {
+            "exit_code": 0,
+            "items": [
+                {"url": "https://www.youtube.com/watch?v=one"},
+                {"url": "https://youtu.be/two"},
+            ],
+            "youtube_summary": {
+                "status": "failed",
+                "expected": 2,
+                "succeeded": 1,
+                "failed": 1,
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "YouTube coverage incomplete"):
+            require_digest_ready_manifest(manifest)
+        manifest["youtube_summary"] = {
+            "status": "succeeded",
+            "expected": 2,
+            "succeeded": 2,
+            "failed": 0,
+        }
+        require_digest_ready_manifest(manifest)
+
     @patch("mellanni_marketing_intelligence.supabase_content.subprocess.run")
     def test_company_cli_profile_is_fallback_credential_source(self, run) -> None:
         run.return_value = subprocess.CompletedProcess(
