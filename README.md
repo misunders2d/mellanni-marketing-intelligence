@@ -15,14 +15,25 @@ Install the locked Python environment once, then use `uv run` for every Python c
 UV_CACHE_DIR=/tmp/uv-cache uv sync --locked
 ```
 
-Fetch-only pipeline for Plane project `MKT-1`:
+Current live authority contains 13 enabled sources. Run or resume the complete
+weekly flow with one command:
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly
+```
+
+The runner creates an external `/tmp/mellanni-marketing-weekly/<run>/` workspace,
+snapshots live sources, writes a hash-bound manifest for collected content, processes all YouTube episodes, and returns fixed paths for the agent-authored evidence packet and digest. Evidence packet must record one included/excluded review per manifest item. After agent writes those two files, run same command again; it validates, writes and content-hash-verifies a draft, links exact content proof, and writes one immutable receipt.
+See the operator skill's [canonical digest runbook](skills/mellanni-marketing-operator/references/operations.md#digest-run).
+
+Fetch-only debugging for Plane project `MKT-1`:
 
 1. Collect recent items from the live source registry.
 2. Normalize fetched page/feed text.
 3. Write one Markdown file per item under ignored local `journal/<run>/`.
 4. Write a machine-readable manifest with source health and item paths.
 
-The fetch pipeline does not start agents, score content, schedule jobs, or deliver messages. After collection, run the YouTube helper once in manifest batch mode before analysis.
+The fetch-only command does not start agents, score content, schedule jobs, or deliver messages.
 
 ## Manual run
 
@@ -52,11 +63,13 @@ Run every YouTube video in one collection manifest. Each video gets separate JSO
 
 ```bash
 node --env-file=.env scripts/youtube-summary.mjs \
-  --manifest journal/RUN_ID/manifest.json \
-  --output-dir /tmp/mellanni-digest.RUN/youtube
+  --manifest journal/RUN_ID/manifest.json
 ```
 
-Single-URL debugging remains supported. Optional batch focus uses `--focus`. Add `--static` for static frame sampling. Model overrides use `YOUTUBE_SUMMARIZER_MODEL` and `YOUTUBE_SUMMARIZER_FALLBACK_MODEL`.
+Batch output defaults to `journal/RUN_ID/youtube/`; the collection manifest stays
+byte-for-byte immutable. Weekly batch mode requires agentic processing and defaults
+to concurrency 2, a 600-second item timeout, a 3,600-second batch deadline, and a
+25-video preflight cap. Single-URL debugging supports static frame sampling.
 
 ## Supabase content flow
 
@@ -104,19 +117,20 @@ Push an agent-produced digest as a draft:
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
   push-digest --input examples/digest.example.json \
-  --evidence-packet examples/evidence-packet.example.json
+  --evidence-packet examples/evidence-packet.example.json \
+  --manifest journal/<run>/manifest.json
 ```
 
-Add `--manifest journal/<run>/manifest.json` to attach collection plus private evidence packet to private run record. Employee-visible digest receives no exact internal metrics, identifiers, query results, or Professional Memory records. Add `--publish` only for explicitly approved direct publication; normal flow is draft first, then publish from `/admin`.
+Manifest, bound item/YouTube artifacts, evidence packet, and canonical public/private digest content create compact linked run proof. Publication atomically checks current content against that proof. Keep details in canonical digest runbook; raw run artifacts are not publication authority and are never uploaded.
 
-Record any collection run independently, including failures that never produce a digest:
+For a standalone collection outside `mellanni-weekly`, record a run independently, including failures that never produce a digest:
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
   record-run --manifest journal/<run>/manifest.json
 ```
 
-When collection succeeded but synthesis cannot continue, record the actual outcome:
+For that standalone path, record a no-digest outcome explicitly:
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
@@ -124,7 +138,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supa
   --outcome no-digest --reason "missing required Mellanni MCP capability"
 ```
 
-Use `--digest-id UUID` only when a digest was created separately and should be linked to that run.
+Use `--digest-id UUID` only when a digest was created separately and should be linked to that run. Never use low-level `record-run` to terminate an awaiting `mellanni-weekly` run; rerun same weekly command with `--fail-reason` so state and immutable receipt become terminal.
 
 The website needs only:
 
@@ -154,7 +168,9 @@ Offboarding is immediate and deterministic: run `list-members --all`, then `set-
 
 ## Manifest observability
 
-Runs use additive manifest schema v2. Any source error now returns nonzero, so incomplete collection cannot proceed as success. V2 includes:
+Runs use additive manifest schema v2. Only fatal source acquisition/parsing errors
+return nonzero; recoverable item failures and item-limit truncation remain visible
+warnings. V2 includes:
 
 - exact run parameters and source-config SHA-256;
 - per-source warnings, feed candidate totals, actual probe count, and truncation count;

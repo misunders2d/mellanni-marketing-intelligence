@@ -8,6 +8,7 @@ dependencies = ["jsonschema>=4.23,<5"]
 [project.scripts]
 mellanni-marketing-intelligence = "mellanni_marketing_intelligence.cli:main"
 mellanni-supabase-content = "mellanni_marketing_intelligence.supabase_content:main"
+mellanni-weekly = "mellanni_marketing_intelligence.weekly:main"
 
 [build-system]
 requires = ["setuptools>=68"]

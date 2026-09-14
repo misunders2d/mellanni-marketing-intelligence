@@ -43,7 +43,9 @@ def run_fetch(
     started = datetime.now(UTC)
     run_id = started.strftime("%Y%m%dT%H%M%S.%fZ")
     run_dir = journal_root / run_id
-    run_dir.mkdir(parents=True, exist_ok=False)
+    journal_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    journal_root.chmod(0o700)
+    run_dir.mkdir(mode=0o700, exist_ok=False)
 
     config_sha256 = hashlib.sha256(config_path.read_bytes()).hexdigest()
     sources = load_sources(config_path)
@@ -56,6 +58,9 @@ def run_fetch(
         sources = [source for source in sources if source.slug in requested]
 
     items, statuses = _collect_all(sources, since_days, fetch_workers, fetcher)
+    item_ids = [item.item_id for item in items]
+    if len(item_ids) != len(set(item_ids)):
+        raise RuntimeError("collector returned duplicate item IDs")
     item_records: list[dict[str, object]] = []
     for item in items:
         _, record = write_item(run_dir, item)
@@ -63,7 +68,7 @@ def run_fetch(
 
     source_failures = sum(1 for status in statuses if status.errors)
     manifest: dict[str, Any] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "run_id": run_id,
         "started_at": started.isoformat(),
         "finished_at": datetime.now(UTC).isoformat(),

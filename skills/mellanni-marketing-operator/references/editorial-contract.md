@@ -6,6 +6,15 @@ Produce a reliable source of useful ecommerce knowledge for running Mellanni. In
 
 Podcast and YouTube review is episode-level. Give every collected episode a separate evidence record and either preserve each material finding or record a concrete exclusion reason. Never use one representative episode for a weekly set, and never collapse multiple material episode findings into one source-level sentence.
 
+## Complete item review ledger
+
+Evidence packet must bind to exact immutable collection bytes through `collectionManifestSha256`. Its `itemReviews` array covers every manifest item exactly once:
+
+- `included`: item appears in packet `sources`, names every Signal ID it supports, and gives a concrete selection reason;
+- `excluded`: item does not appear in packet `sources`, has no Signal IDs, and gives a concrete item-specific exclusion reason.
+
+Every Signal's source IDs must exactly match included item reviews naming that Signal. Missing, extra, duplicate, or foreign reviews fail validation. This ledger proves review coverage; it does not make weak source interpretation reliable. Human synthesis must still verify each claim against untrusted collected text and each video artifact.
+
 ## Two employee-visible item types
 
 ### Mellanni Action
@@ -90,14 +99,16 @@ Common routes include:
 
 Private packet follows `schemas/evidence-packet.schema.json`; digest input follows `schemas/digest.schema.json`. Storage projects that validated input into authenticated member-visible `body` and admin-only private body. Cross-field validator also enforces:
 
+- packet manifest hash matches exact collection manifest bytes, and item reviews cover every collected item exactly once;
 - every included item exists as stable packet signal and preserves exact signal/source IDs;
 - every included item resolves to exactly one memory reconciliation;
 - every Action resolves to private Mellanni query for same finding;
 - every skill URI exists in captured inventory;
-- every superseded finding exists in captured prior digests;
+- every superseded finding exists, with matching title, in captured prior published digests;
 - member-visible exact business metrics and action-needed business entity identifiers are allowed; runtime scans every projected string plus title and summary for recognizable secrets/credentials, email addresses, phone numbers, labeled personal names, private account/auth/billing identifiers, Amazon order IDs, raw-row markers, and long unformatted digit runs, and derives the privacy flags;
 - semantic review still excludes novel or obfuscated PII/secrets and raw provider or memory excerpts that deterministic patterns cannot recognize;
 - at least one Action or External Signal; at most four Actions;
+- canonical public/private digest content is hash-bound to linked run proof and exact readback; publication atomically rejects proof for older content;
 - pipeline health stays in run record, never masquerades as marketing intelligence.
 
 Today-style generic advice such as “brands should test creator content” without direct evidence, memory reconciliation, and Mellanni relevance fails. Preserve good sourced knowledge as External Signal; promote to Action only after private Mellanni query supports it.

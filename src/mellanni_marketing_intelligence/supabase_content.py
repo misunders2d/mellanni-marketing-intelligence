@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,10 +10,11 @@ import re
 import subprocess
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 from uuid import UUID
 
+from .collector import is_youtube_url
 from .editorial import (
     private_digest_body,
     public_digest_body,
@@ -35,7 +37,7 @@ SOURCE_FIELDS = (
 )
 SOURCE_ADMIN_FIELDS = SOURCE_FIELDS + ",enabled,updated_at"
 DIGEST_ADMIN_FIELDS = (
-    "id,slug,published_on,status,title,summary,body,updated_at"
+    "id,slug,published_on,status,title,summary,body,content_sha256,updated_at"
 )
 MEMBER_ADMIN_FIELDS = "user_id,email,role,active,updated_at"
 
@@ -259,6 +261,33 @@ def set_source_state(base_url: str, key: str, slug: str, *, enabled: bool) -> di
     return rows[0]
 
 
+def _canonical_sha256(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def digest_content_sha256(row: dict[str, Any]) -> str:
+    required = (
+        "slug",
+        "published_on",
+        "title",
+        "summary",
+        "body",
+        "private_body",
+    )
+    missing = [field for field in required if field not in row]
+    if missing:
+        raise ValueError(
+            "cannot fingerprint digest with missing fields: " + ", ".join(missing)
+        )
+    return _canonical_sha256({field: row[field] for field in required})
+
+
 def digest_to_row(
     document: dict[str, Any],
     *,
@@ -266,7 +295,7 @@ def digest_to_row(
     evidence_packet: dict[str, Any],
 ) -> dict[str, Any]:
     validate_digest(document, evidence_packet)
-    return {
+    row = {
         "slug": document["slug"],
         "published_on": document["date"],
         "status": "published" if publish else "draft",
@@ -276,6 +305,8 @@ def digest_to_row(
         "private_body": private_digest_body(document),
         "published_at": datetime.now(timezone.utc).isoformat() if publish else None,
     }
+    row["content_sha256"] = digest_content_sha256(row)
+    return row
 
 
 def push_digest(
@@ -347,18 +378,23 @@ def set_digest_state(base_url: str, key: str, slug: str, *, status: str) -> dict
         raise ValueError("digest slug must contain lowercase letters, numbers, and hyphens only")
     if status not in {"draft", "published"}:
         raise ValueError("digest status must be draft or published")
-    publishing = status == "published"
-    rows = _request_json(
-        base_url,
-        key,
-        "digests?slug=eq." + quote(slug, safe=""),
-        method="PATCH",
-        payload={
-            "status": status,
-            "published_at": datetime.now(timezone.utc).isoformat() if publishing else None,
-        },
-        prefer="return=representation",
-    )
+    if status == "published":
+        rows = _request_json(
+            base_url,
+            key,
+            "rpc/publish_digest_with_verified_run",
+            method="POST",
+            payload={"p_slug": slug},
+        )
+    else:
+        rows = _request_json(
+            base_url,
+            key,
+            "digests?slug=eq." + quote(slug, safe=""),
+            method="PATCH",
+            payload={"status": "draft", "published_at": None},
+            prefer="return=representation",
+        )
     if not isinstance(rows, list) or len(rows) != 1:
         raise RuntimeError(f"digest {slug!r} was not found")
     return rows[0]
@@ -407,6 +443,7 @@ def record_run(
     *,
     digest_id: str | None,
     evidence_packet: dict[str, Any] | None = None,
+    run_proof: dict[str, Any] | None = None,
     outcome: str = "collection",
     reason: str = "",
 ) -> None:
@@ -414,11 +451,38 @@ def record_run(
         raise ValueError("run outcome must be collection, digest, or no-digest")
     if outcome == "no-digest" and not reason.strip():
         raise ValueError("no-digest run outcome requires a reason")
+    if outcome == "digest" and run_proof is None:
+        raise ValueError("digest run outcome requires compact verified run proof")
+    if outcome != "digest" and run_proof is not None:
+        raise ValueError("compact run proof is only valid for a digest run outcome")
     statuses = manifest.get("source_statuses") or []
     error_count = sum(len(status.get("errors") or []) for status in statuses)
     collection_succeeded = int(manifest.get("exit_code", 1)) == 0
     run_status = "succeeded" if collection_succeeded and outcome != "no-digest" else "failed"
+    if run_proof is not None:
+        if evidence_packet is not None:
+            raise ValueError("compact run proof cannot include a raw evidence packet")
+        validate_run_proof(run_proof)
+        stored_manifest: dict[str, Any] = {"runProof": run_proof}
+    else:
+        stored_manifest = (
+            manifest
+            if evidence_packet is None
+            else {"collection": manifest, "evidencePacket": evidence_packet}
+        )
+    run_identity = (
+        _canonical_sha256(run_proof)
+        if run_proof is not None
+        else _canonical_sha256(
+            {
+                "run_id": manifest.get("run_id"),
+                "outcome": outcome,
+                "reason": reason.strip(),
+            }
+        )
+    )
     payload = {
+        "run_key": f"{outcome}:{run_identity}",
         "status": run_status,
         "outcome": outcome,
         "outcome_reason": reason.strip(),
@@ -428,45 +492,474 @@ def record_run(
         "item_count": int(manifest.get("item_count", 0)),
         "warning_count": int(manifest.get("warning_count", 0)),
         "error_count": error_count,
-        "manifest": manifest
-        if evidence_packet is None
-        else {"collection": manifest, "evidencePacket": evidence_packet},
+        "manifest": stored_manifest,
         "digest_id": digest_id,
     }
     _request_json(
         base_url,
         key,
-        "runs",
+        "runs?on_conflict=run_key",
         method="POST",
         payload=payload,
-        prefer="return=minimal",
+        prefer="resolution=ignore-duplicates,return=minimal",
     )
 
 
-def require_digest_ready_manifest(manifest: dict[str, Any]) -> None:
+def _path_inside(root: Path, relative: str, label: str) -> Path:
+    path = Path(relative)
+    if path.is_absolute():
+        raise ValueError(f"refusing digest write: {label} path must be relative to run directory")
+    resolved = (root / path).resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ValueError(f"refusing digest write: {label} path escapes run directory")
+    return resolved
+
+
+def require_digest_ready_manifest(
+    manifest: dict[str, Any], manifest_path: Path | None = None
+) -> None:
     if int(manifest.get("exit_code", 1)) != 0:
         raise ValueError(
             f"refusing digest write: collection failed (exit_code={manifest.get('exit_code')})"
         )
+    if manifest.get("schema_version") != 3:
+        raise ValueError("refusing digest write: collection manifest schema is obsolete")
+    if manifest_path is None:
+        raise ValueError(
+            "refusing digest write: manifest path is required to verify collection evidence"
+        )
+    manifest_path = manifest_path.resolve()
+    run_dir = manifest_path.parent
+    if not manifest_path.is_file():
+        raise ValueError("refusing digest write: collection manifest file is missing")
+    declared_manifest_path = manifest.get("manifest_path")
+    if (
+        not isinstance(declared_manifest_path, str)
+        or Path(declared_manifest_path).resolve() != manifest_path
+    ):
+        raise ValueError("refusing digest write: collection manifest path mismatch")
+
+    items = manifest.get("items")
+    statuses = manifest.get("source_statuses")
+    if not isinstance(items, list) or not isinstance(statuses, list):
+        raise ValueError("refusing digest write: collection items and statuses are required")
+    source_count = int(manifest.get("source_count", -1))
+    item_count = int(manifest.get("item_count", -1))
+    source_failures = sum(
+        1
+        for status in statuses
+        if isinstance(status, dict) and status.get("errors")
+    )
+    if (
+        source_count != len(statuses)
+        or item_count != len(items)
+        or int(manifest.get("source_failures", -1)) != source_failures
+        or source_failures != 0
+    ):
+        raise ValueError("refusing digest write: collection manifest counts are inconsistent")
+
+    item_ids: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError("refusing digest write: invalid collection item record")
+        item_id = str(item.get("item_id", ""))
+        if not item_id or item_id in item_ids:
+            raise ValueError("refusing digest write: collection item IDs must be unique")
+        item_ids.add(item_id)
+        artifact = _path_inside(
+            run_dir, str(item.get("journal_path", "")), "collection artifact"
+        )
+        if not artifact.is_file():
+            raise ValueError("refusing digest write: collection artifact is missing")
+        artifact_hash = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        if artifact_hash != item.get("artifact_sha256"):
+            raise ValueError("refusing digest write: collection artifact hash mismatch")
+
     youtube_count = sum(
         1
         for item in manifest.get("items") or []
-        if urlsplit(str(item.get("url", ""))).netloc.lower().removeprefix("www.")
-        in {"youtube.com", "youtu.be"}
+        if is_youtube_url(str(item.get("url", "")))
     )
     if youtube_count:
-        summary = manifest.get("youtube_summary") or {}
+        sidecar_path = run_dir / "youtube" / "youtube-summary-manifest.json"
+        try:
+            summary = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"refusing digest write: invalid YouTube sidecar {sidecar_path}: {exc}"
+            ) from exc
+        manifest_hash = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        expected_items = [
+            (str(item.get("item_id", "")), str(item.get("url", "")))
+            for item in manifest.get("items") or []
+            if is_youtube_url(str(item.get("url", "")))
+        ]
+        if summary.get("run_id") != manifest.get("run_id"):
+            raise ValueError(
+                "refusing digest write: stale YouTube sidecar run_id mismatch; rerun YouTube batch"
+            )
+        if summary.get("collection_manifest_sha256") != manifest_hash:
+            raise ValueError(
+                "refusing digest write: YouTube sidecar manifest hash mismatch; rerun YouTube batch"
+            )
         if (
             summary.get("status") != "succeeded"
+            or summary.get("processing") != "agentic"
             or int(summary.get("expected", -1)) != youtube_count
             or int(summary.get("succeeded", -1)) != youtube_count
             or int(summary.get("failed", -1)) != 0
+            or summary.get("expected_urls") != [url for _, url in expected_items]
         ):
             raise ValueError(
                 f"refusing digest write: YouTube coverage incomplete "
                 f"(expected={youtube_count}, succeeded={summary.get('succeeded')}, "
                 f"failed={summary.get('failed')})"
             )
+        results = summary.get("results")
+        if not isinstance(results, list) or len(results) != youtube_count:
+            raise ValueError("refusing digest write: YouTube result records are incomplete")
+        actual_items: list[tuple[str, str]] = []
+        for result in sorted(results, key=lambda row: int(row.get("index", -1))):
+            if not isinstance(result, dict):
+                raise ValueError("refusing digest write: invalid YouTube result record")
+            actual_items.append((str(result.get("item_id", "")), str(result.get("url", ""))))
+            evidence = result.get("processing_evidence") or {}
+            if (
+                result.get("processing") != "agentic"
+                or not isinstance(result.get("model"), str)
+                or not result["model"].strip()
+                or evidence.get("processingCall") is not True
+                or evidence.get("processingResult") is not True
+                or evidence.get("agenticProcessingUsed") is not True
+            ):
+                raise ValueError("refusing digest write: YouTube agentic evidence is incomplete")
+            artifact = _path_inside(run_dir, str(result.get("artifact_path", "")), "artifact")
+            details = _path_inside(run_dir, str(result.get("details_path", "")), "details")
+            if not artifact.is_file() or not details.is_file():
+                raise ValueError("refusing digest write: YouTube artifact is missing")
+            artifact_hash = hashlib.sha256(artifact.read_bytes()).hexdigest()
+            if artifact_hash != result.get("artifact_sha256"):
+                raise ValueError("refusing digest write: YouTube artifact hash mismatch")
+            details_hash = hashlib.sha256(details.read_bytes()).hexdigest()
+            if details_hash != result.get("details_sha256"):
+                raise ValueError("refusing digest write: YouTube details hash mismatch")
+        if actual_items != expected_items:
+            raise ValueError("refusing digest write: YouTube result coverage does not match manifest")
+
+
+def require_evidence_packet_bound_to_manifest(
+    evidence_packet: dict[str, Any],
+    manifest: dict[str, Any],
+    manifest_path: Path,
+) -> None:
+    validate_evidence_packet(evidence_packet)
+    manifest_path = manifest_path.resolve()
+    manifest_hash = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    if evidence_packet.get("collectionManifestSha256") != manifest_hash:
+        raise ValueError(
+            "refusing digest write: evidence packet collection manifest hash mismatch"
+        )
+
+    packet_sources = evidence_packet.get("sources")
+    item_reviews = evidence_packet.get("itemReviews")
+    manifest_items = manifest.get("items")
+    if not all(
+        isinstance(value, list)
+        for value in (packet_sources, item_reviews, manifest_items)
+    ):
+        raise ValueError(
+            "refusing digest write: packet sources, item reviews, and manifest items are required"
+        )
+
+    manifest_by_id = {
+        str(item.get("item_id", "")): str(item.get("url", ""))
+        for item in manifest_items
+        if isinstance(item, dict)
+    }
+    review_ids = {
+        str(review.get("itemId", ""))
+        for review in item_reviews
+        if isinstance(review, dict)
+    }
+    if (
+        len(manifest_by_id) != len(manifest_items)
+        or len(review_ids) != len(item_reviews)
+        or review_ids != set(manifest_by_id)
+    ):
+        raise ValueError(
+            "refusing digest write: item reviews must cover every collection manifest item exactly once"
+        )
+
+    packet_set = {
+        (str(source.get("id", "")), str(source.get("url", "")))
+        for source in packet_sources
+        if isinstance(source, dict)
+    }
+    manifest_set = set(manifest_by_id.items())
+    if len(packet_set) != len(packet_sources) or not packet_set.issubset(manifest_set):
+        raise ValueError(
+            "refusing digest write: evidence packet source URL/ID set does not match collection manifest items"
+        )
+
+
+def require_prior_digest_findings_bound(
+    evidence_packet: dict[str, Any], prior_digests: list[dict[str, Any]]
+) -> None:
+    available: dict[tuple[str, str], str] = {}
+    for digest in prior_digests:
+        slug = str(digest.get("slug", ""))
+        body = digest.get("body")
+        if not slug or not isinstance(body, dict):
+            continue
+        for finding in [*(body.get("actions") or []), *(body.get("signals") or [])]:
+            if isinstance(finding, dict):
+                finding_id = str(finding.get("id", ""))
+                title = str(finding.get("title", ""))
+                if finding_id and title:
+                    available[(slug, finding_id)] = title
+
+    references = evidence_packet.get("priorDigestFindings")
+    if not isinstance(references, list):
+        raise ValueError("evidence packet prior digest findings are required")
+    seen: set[tuple[str, str]] = set()
+    for reference in references:
+        if not isinstance(reference, dict):
+            raise ValueError("evidence packet prior digest finding is invalid")
+        key = (str(reference.get("digestSlug", "")), str(reference.get("findingId", "")))
+        if key in seen:
+            raise ValueError("evidence packet prior digest findings must be unique")
+        seen.add(key)
+        if available.get(key) != reference.get("title"):
+            raise ValueError(
+                "evidence packet prior digest finding is absent from the captured published snapshot"
+            )
+
+
+def build_collection_proof(
+    manifest: dict[str, Any], manifest_path: Path
+) -> dict[str, Any]:
+    require_digest_ready_manifest(manifest, manifest_path)
+    manifest_path = manifest_path.resolve()
+    sidecar_path = manifest_path.parent / "youtube" / "youtube-summary-manifest.json"
+    try:
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"refusing digest write: invalid YouTube sidecar {sidecar_path}: {exc}"
+        ) from exc
+    youtube_count = sum(
+        1
+        for item in manifest.get("items") or []
+        if is_youtube_url(str(item.get("url", "")))
+    )
+    expected_urls = [
+        str(item.get("url", ""))
+        for item in manifest.get("items") or []
+        if is_youtube_url(str(item.get("url", "")))
+    ]
+    expected_status = "succeeded" if youtube_count else "not-required"
+    if (
+        sidecar.get("run_id") != manifest.get("run_id")
+        or sidecar.get("collection_manifest_sha256")
+        != hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        or sidecar.get("status") != expected_status
+        or sidecar.get("processing") != "agentic"
+        or int(sidecar.get("expected", -1)) != youtube_count
+        or int(sidecar.get("succeeded", -1)) != youtube_count
+        or int(sidecar.get("failed", -1)) != 0
+        or sidecar.get("expected_urls") != expected_urls
+    ):
+        raise ValueError(
+            "refusing digest write: YouTube sidecar is not fully bound and verified"
+        )
+    return {
+        "run_id": manifest.get("run_id"),
+        "collection_manifest_sha256": hashlib.sha256(
+            manifest_path.read_bytes()
+        ).hexdigest(),
+        "youtube_sidecar_sha256": hashlib.sha256(sidecar_path.read_bytes()).hexdigest(),
+        "counts": {
+            "source_count": int(manifest.get("source_count", 0)),
+            "item_count": int(
+                manifest.get("item_count", len(manifest.get("items") or []))
+            ),
+            "youtube_count": youtube_count,
+            "youtube_succeeded": int(sidecar.get("succeeded", 0)),
+        },
+        "agentic_verified": youtube_count == 0
+        or (
+            sidecar.get("processing") == "agentic"
+            and int(sidecar.get("succeeded", -1)) == youtube_count
+            and int(sidecar.get("failed", -1)) == 0
+        ),
+    }
+
+
+def build_run_proof(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+    *,
+    digest_document: dict[str, Any],
+    evidence_packet: dict[str, Any],
+) -> dict[str, Any]:
+    require_evidence_packet_bound_to_manifest(
+        evidence_packet, manifest, manifest_path
+    )
+    row = digest_to_row(
+        digest_document,
+        publish=False,
+        evidence_packet=evidence_packet,
+    )
+    proof = {
+        "schema_version": 2,
+        **build_collection_proof(manifest, manifest_path),
+        "evidence_packet_sha256": _canonical_sha256(evidence_packet),
+        "digest_content_sha256": row["content_sha256"],
+    }
+    validate_run_proof(proof)
+    return proof
+
+
+def validate_run_proof(proof: dict[str, Any]) -> None:
+    required_fields = {
+        "schema_version",
+        "run_id",
+        "collection_manifest_sha256",
+        "youtube_sidecar_sha256",
+        "evidence_packet_sha256",
+        "digest_content_sha256",
+        "counts",
+        "agentic_verified",
+    }
+    required_counts = {
+        "source_count",
+        "item_count",
+        "youtube_count",
+        "youtube_succeeded",
+    }
+    counts = proof.get("counts")
+    hashes = (
+        proof.get("collection_manifest_sha256"),
+        proof.get("youtube_sidecar_sha256"),
+        proof.get("evidence_packet_sha256"),
+        proof.get("digest_content_sha256"),
+    )
+    if proof.get("schema_version") != 2 or set(proof) != required_fields:
+        raise ValueError("refusing publication: linked run proof is missing or obsolete")
+    if not isinstance(proof.get("run_id"), str) or not proof["run_id"].strip():
+        raise ValueError("refusing publication: linked run proof has no run ID")
+    if not all(
+        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+        for value in hashes
+    ):
+        raise ValueError("refusing publication: linked run proof hashes are invalid")
+    if (
+        not isinstance(counts, dict)
+        or set(counts) != required_counts
+        or any(
+            isinstance(counts.get(name), bool)
+            or not isinstance(counts.get(name), int)
+            or counts[name] < 0
+            for name in required_counts
+        )
+        or counts["youtube_count"] > counts["item_count"]
+    ):
+        raise ValueError("refusing publication: linked run proof counts are invalid")
+    if (
+        counts["youtube_count"] != counts["youtube_succeeded"]
+        or proof.get("agentic_verified") is not True
+    ):
+        raise ValueError("refusing publication: linked run proof is not agentic-verified")
+
+
+def require_digest_readback(
+    rows: list[dict[str, Any]],
+    *,
+    digest_id: str,
+    slug: str,
+    status: str,
+    expected_content_sha256: str,
+) -> dict[str, Any]:
+    matches = [row for row in rows if row.get("slug") == slug]
+    if len(matches) != 1:
+        raise RuntimeError("draft readback did not return exactly one matching digest")
+    row = matches[0]
+    if row.get("id") != digest_id or row.get("status") != status:
+        raise RuntimeError("draft readback did not match written digest identity or status")
+    actual_hash = digest_content_sha256(row)
+    if (
+        row.get("content_sha256") != expected_content_sha256
+        or actual_hash != expected_content_sha256
+    ):
+        raise RuntimeError("draft readback content did not match validated digest")
+    return row
+
+
+def require_linked_digest_run(
+    base_url: str,
+    key: str,
+    slug: str,
+    expected_collection_proof: dict[str, Any] | None = None,
+) -> None:
+    digests = _request_json(
+        base_url,
+        key,
+        "digests?select=id,slug,published_on,title,summary,body,content_sha256&slug=eq."
+        + quote(slug, safe=""),
+    )
+    if not isinstance(digests, list) or len(digests) != 1:
+        raise ValueError(f"digest {slug!r} was not found for publication")
+    digest = digests[0]
+    digest_id = str(digest.get("id", ""))
+    private_rows = _request_json(
+        base_url,
+        key,
+        "digest_private_bodies?select=digest_id,private_body&digest_id=eq."
+        + quote(digest_id, safe=""),
+    )
+    if not isinstance(private_rows, list) or len(private_rows) != 1:
+        raise ValueError(f"digest {slug!r} has no exact private body for publication")
+    digest["private_body"] = private_rows[0].get("private_body")
+    current_content_sha256 = digest_content_sha256(digest)
+    if digest.get("content_sha256") != current_content_sha256:
+        raise ValueError(
+            f"refusing publication: digest {slug!r} stored content hash is inconsistent"
+        )
+
+    runs = _request_json(
+        base_url,
+        key,
+        "runs?select=digest_id,status,outcome,manifest&digest_id=eq."
+        + quote(digest_id, safe="")
+        + "&status=eq.succeeded&outcome=eq.digest",
+    )
+    for run in runs if isinstance(runs, list) else []:
+        if (
+            str(run.get("digest_id", "")) != digest_id
+            or run.get("status") != "succeeded"
+            or run.get("outcome") != "digest"
+        ):
+            continue
+        stored = run.get("manifest") or {}
+        proof = stored.get("runProof") if isinstance(stored, dict) else None
+        if not isinstance(proof, dict):
+            continue
+        try:
+            validate_run_proof(proof)
+        except ValueError:
+            continue
+        collection_matches = expected_collection_proof is None or all(
+            proof.get(field) == value
+            for field, value in expected_collection_proof.items()
+        )
+        if (
+            collection_matches
+            and proof["digest_content_sha256"] == current_content_sha256
+        ):
+            return
+    raise ValueError(
+        f"refusing publication: digest {slug!r} has no linked successful proof for its current content"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -506,6 +999,7 @@ def build_parser() -> argparse.ArgumentParser:
     digest_state_parser = subparsers.add_parser("set-digest-state")
     digest_state_parser.add_argument("--slug", required=True)
     digest_state_parser.add_argument("--state", choices=("draft", "published"), required=True)
+    digest_state_parser.add_argument("--manifest", type=Path)
 
     member_list_parser = subparsers.add_parser("list-members")
     member_list_parser.add_argument("--all", action="store_true")
@@ -596,6 +1090,19 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "set-digest-state":
+            if args.state == "published":
+                expected_collection_proof = None
+                if args.manifest is not None:
+                    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+                    expected_collection_proof = build_collection_proof(
+                        manifest, args.manifest
+                    )
+                require_linked_digest_run(
+                    base_url,
+                    key,
+                    args.slug,
+                    expected_collection_proof,
+                )
             digest = set_digest_state(base_url, key, args.slug, status=args.state)
             print(json.dumps({"slug": digest.get("slug"), "status": digest.get("status")}))
             return 0
@@ -652,26 +1159,58 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-        require_digest_ready_manifest(manifest)
+        require_digest_ready_manifest(manifest, args.manifest)
         document = json.loads(args.input.read_text(encoding="utf-8"))
         evidence_packet = json.loads(
             args.evidence_packet.read_text(encoding="utf-8")
+        )
+        expected_row = digest_to_row(
+            document,
+            publish=False,
+            evidence_packet=evidence_packet,
+        )
+        require_evidence_packet_bound_to_manifest(
+            evidence_packet, manifest, args.manifest
+        )
+        require_prior_digest_findings_bound(
+            evidence_packet,
+            list_digests(base_url, key, status="published"),
+        )
+        run_proof = build_run_proof(
+            manifest,
+            args.manifest,
+            digest_document=document,
+            evidence_packet=evidence_packet,
         )
         digest = push_digest(
             base_url,
             key,
             document,
-            publish=args.publish,
+            publish=False,
             evidence_packet=evidence_packet,
+        )
+        if digest.get("status") != "draft":
+            raise RuntimeError("digest write did not return draft status")
+        require_digest_readback(
+            list_digests(base_url, key, status="draft"),
+            digest_id=str(digest.get("id", "")),
+            slug=document["slug"],
+            status="draft",
+            expected_content_sha256=expected_row["content_sha256"],
         )
         record_run(
             base_url,
             key,
             manifest,
             digest_id=digest.get("id"),
-            evidence_packet=evidence_packet,
+            run_proof=run_proof,
             outcome="digest",
         )
+        if args.publish:
+            require_linked_digest_run(base_url, key, document["slug"], run_proof)
+            digest = set_digest_state(
+                base_url, key, document["slug"], status="published"
+            )
         print(json.dumps({"digest_id": digest.get("id"), "slug": digest.get("slug"), "status": digest.get("status")}))
         return 0
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:

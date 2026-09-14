@@ -1,6 +1,6 @@
 # Mellanni Marketing Intelligence — Standalone Agent Guide
 
-This guide explains what this skillset is for and how any AI agent or operator can run the entire marketing intelligence pipeline **standalone** — with **zero Supabase access, zero Next.js website, and zero cloud database requirements**.
+This guide explains the offline fixture path, with **zero Supabase access, zero Next.js website, and zero cloud database requirements**. It is not the live Mellanni workflow. Any agent with approved live Supabase access must use `UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly` to start and resume; never substitute this fixture/manual handoff for the live runner.
 
 ---
 
@@ -98,7 +98,7 @@ Sources are defined in JSON format. The default offline fixture is located at:
 ```
 
 ### Pre-Configured Pilot Sources
-The included `config/sources.json` comes pre-configured with 12 top ecommerce & marketplace intelligence sources:
+The included `config/sources.json` comes pre-configured with 13 top ecommerce & marketplace intelligence sources:
 - **Marketplace Pulse** (Amazon & marketplace data)
 - **Practical Ecommerce** (Paid media, CRO, analytics)
 - **DTC Newsletter** (Growth tactics, creative, landing pages)
@@ -108,6 +108,7 @@ The included `config/sources.json` comes pre-configured with 12 top ecommerce & 
 - **Marketing Operators** (Ecommerce growth & experimentation)
 - **9 Operators** (Ecommerce leadership & scaling)
 - **Limited Supply** (DTC brand strategy & economics)
+- **AM/PM Podcast** (Amazon seller strategy & operations)
 - **The PPC Den** (Amazon PPC structure & optimization)
 - **Seller Sessions** (Amazon SEO, ranking, AI workflows)
 - **The Smartest Amazon Seller** (Amazon brand strategy)
@@ -116,7 +117,17 @@ You can add any new blogs, RSS/Atom feeds, or podcast feeds directly to `config/
 
 ---
 
-## 5. How to Run the Pipeline
+## 5. How to Run the Offline Fixture Pipeline
+
+For live Mellanni collection, YouTube processing, synthesis handoff, draft write,
+readback, and linked proof, stop here and use the weekly runner:
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly
+```
+
+The steps below are only for standalone/offline fixture output. They do not create
+or publish a live Mellanni digest.
 
 ### Step 1: Install Python Environment
 Using `uv` (recommended):
@@ -129,8 +140,8 @@ Or using standard `pip`:
 UV_CACHE_DIR=/tmp/uv-cache uv sync --locked
 ```
 
-### Step 2: Run Collection
-Fetch the last 8 days of content across all configured sources:
+### Step 2: Run Offline Fixture Collection
+Fetch the last 8 days of content from the checked-in fixture configuration:
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence --since-days 8
 ```
@@ -141,24 +152,22 @@ UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence --so
 ```
 
 Output is written to `journal/<run_id>/`:
-- `journal/<run_id>/manifest.json` — Machine-readable summary of fetched sources, counts, and status.
-- `journal/<run_id>/<source_slug>/<item_hash>.md` — Clean Markdown extracts of individual articles/episodes.
+- `journal/<run_id>/manifest.json` — Immutable manifest v3 with source status, item metadata, and SHA-256 for every collected artifact.
+- `journal/<run_id>/items/<source_slug>/<item_hash>.md` — Private `0600` Markdown extracts of untrusted external articles/episodes.
 
 ### Step 3: Summarize Every YouTube Video
 When the manifest contains YouTube items, run the Gemini 3.8 Flash agentic video summarizer across the full manifest. The command writes one JSON and Markdown artifact per video and exits nonzero if any video fails:
 ```bash
 node --env-file=.env scripts/youtube-summary.mjs \
-  --manifest journal/RUN_ID/manifest.json \
-  --output-dir /tmp/mellanni-digest.RUN/youtube
+  --manifest journal/RUN_ID/manifest.json
 
 # Optional focus:
 node --env-file=.env scripts/youtube-summary.mjs \
   --manifest journal/RUN_ID/manifest.json \
-  --output-dir /tmp/mellanni-digest.RUN/youtube \
   --focus "FOCUS QUESTION"
 ```
 
-Require `expected == succeeded` and `failed == 0` before synthesis. Review every episode artifact separately; never substitute one representative video or collapse the week into one sentence.
+Output stays under `journal/RUN_ID/youtube/`. Helper leaves `manifest.json` immutable and writes a run/hash-bound sidecar plus atomic per-episode Markdown and JSON artifacts, each with its own SHA-256. Require `expected == succeeded` and `failed == 0` before synthesis. Review every episode separately; never substitute one representative video or collapse week into one sentence. In evidence packet, record one included/excluded `itemReviews` decision for every manifest item.
 
 ---
 
@@ -211,7 +220,7 @@ The resulting `report.html` is a single static HTML file with embedded responsiv
 | Path | Purpose |
 |---|---|
 | `STANDALONE.md` | This standalone runbook & guide |
-| `config/sources.json` | 12+ pre-configured ecommerce intelligence sources |
+| `config/sources.json` | 13 pre-configured offline ecommerce intelligence sources |
 | `src/mellanni_marketing_intelligence/` | Core Python collector and feed discovery engine |
 | `scripts/youtube-summary.mjs` | Multimodal Gemini YouTube video summarizer |
 | `scripts/generate_html_report.py` | Standalone zero-dependency HTML report generator |

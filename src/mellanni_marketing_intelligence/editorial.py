@@ -22,15 +22,25 @@ MEMBER_VISIBLE_RESTRICTED_PATTERNS = (
         ),
     ),
     (
+        "bearer or cloud credential",
+        re.compile(
+            r"(?:\bAuthorization\s*:\s*Bearer\s+\S{10,}|"
+            r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b|"
+            r"\bAKIA[A-Z0-9]{16}\b)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
         "email address",
         re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),
     ),
     (
         "phone number",
         re.compile(
+            r"(?:(?<!\w)\+\d{1,3}[\s.-](?:\d[\s.-]?){7,14}\d(?!\w)|"
             r"\b(?:(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]\d{3}[\s.-]\d{4}|"
             r"(?:phone|tel(?:ephone)?|mobile|contact|callback)\s*[:=]?\s*"
-            r"(?:\+?1[\s.-]?)?(?:\d{10}|\d{3}[\s.-]\d{4}))\b",
+            r"(?:\+?1[\s.-]?)?(?:\d{10}|\d{3}[\s.-]\d{4}))\b)",
             re.IGNORECASE,
         ),
     ),
@@ -45,7 +55,10 @@ MEMBER_VISIBLE_RESTRICTED_PATTERNS = (
     ("unformatted long digit run", re.compile(r"\b\d{12,}\b")),
     (
         "raw provider row",
-        re.compile(r"\b(?:raw\s+)?(?:provider\s+)?row\s*[:=]\s*\{", re.IGNORECASE),
+        re.compile(
+            r"\b(?:raw\s+)?(?:provider\s+)?(?:row|record|response|result)\s*[:=]\s*[\{\[]",
+            re.IGNORECASE,
+        ),
     ),
     (
         "account or identity identifier",
@@ -106,7 +119,8 @@ def validate_evidence_packet(packet: dict[str, Any]) -> None:
     _validate_schema(packet, EVIDENCE_SCHEMA_PATH, "evidence packet")
 
     signal_ids = [signal["id"] for signal in packet["signals"]]
-    if len(signal_ids) != len(set(signal_ids)):
+    signal_id_set = set(signal_ids)
+    if len(signal_ids) != len(signal_id_set):
         raise ValueError("evidence packet signal IDs must be unique")
 
     source_ids = {source["id"] for source in packet["sources"]}
@@ -118,6 +132,37 @@ def validate_evidence_packet(packet: dict[str, Any]) -> None:
             raise ValueError(
                 f"evidence packet signal {signal['id']!r} references missing sources: "
                 + ", ".join(sorted(missing))
+            )
+
+    reviews = packet["itemReviews"]
+    review_ids = [review["itemId"] for review in reviews]
+    if len(review_ids) != len(set(review_ids)):
+        raise ValueError("evidence packet item review IDs must be unique")
+    included_reviews = {
+        review["itemId"]: review
+        for review in reviews
+        if review["disposition"] == "included"
+    }
+    if set(included_reviews) != source_ids:
+        raise ValueError(
+            "evidence packet included item reviews must exactly match packet sources"
+        )
+    for review in included_reviews.values():
+        missing = set(review["signalIds"]) - signal_id_set
+        if missing:
+            raise ValueError(
+                f"evidence packet item review {review['itemId']!r} references missing signals: "
+                + ", ".join(sorted(missing))
+            )
+    for signal in packet["signals"]:
+        reviewed_sources = {
+            item_id
+            for item_id, review in included_reviews.items()
+            if signal["id"] in review["signalIds"]
+        }
+        if reviewed_sources != set(signal["sourceIds"]):
+            raise ValueError(
+                f"evidence packet signal {signal['id']!r} source IDs differ from item reviews"
             )
 
     record_ids = {record["id"] for record in packet["memoryRecords"]}
@@ -315,6 +360,12 @@ def validate_digest(document: dict[str, Any], packet: dict[str, Any]) -> None:
             raise ValueError(f"digest finding {finding_id!r} references a missing public source")
 
         memory_refs = finding["memory"]["privateEvidenceRefs"]
+        unknown_memory_refs = set(memory_refs) - set(reconciliation_by_id)
+        if unknown_memory_refs:
+            raise ValueError(
+                f"digest finding {finding_id!r} cites unknown memory reconciliation(s): "
+                + ", ".join(sorted(unknown_memory_refs))
+            )
         if finding["memory"]["outcome"] == "no-relevant-record":
             matching_reconciliations = [
                 reconciliation

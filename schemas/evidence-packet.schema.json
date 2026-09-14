@@ -1,12 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mellanni.com/schemas/marketing-evidence-packet-v1.json",
+  "$id": "https://mellanni.com/schemas/marketing-evidence-packet-v2.json",
   "title": "Private Mellanni Marketing Intelligence evidence packet",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion",
     "generatedAt",
+    "collectionManifestSha256",
+    "itemReviews",
     "signals",
     "sources",
     "priorDigestFindings",
@@ -17,8 +19,17 @@
     "skillInventory"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "generatedAt": { "type": "string", "format": "date-time" },
+    "collectionManifestSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "itemReviews": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/itemReview" }
+    },
     "signals": {
       "type": "array",
       "minItems": 1,
@@ -78,6 +89,35 @@
       "minItems": 1,
       "uniqueItems": true,
       "items": { "$ref": "#/$defs/identifier" }
+    },
+    "itemReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemId", "disposition", "signalIds", "reason"],
+      "properties": {
+        "itemId": { "$ref": "#/$defs/identifier" },
+        "disposition": { "enum": ["included", "excluded"] },
+        "signalIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "reason": { "$ref": "#/$defs/nonEmpty" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "disposition": { "const": "included" } },
+            "required": ["disposition"]
+          },
+          "then": {
+            "properties": { "signalIds": { "minItems": 1 } }
+          },
+          "else": {
+            "properties": { "signalIds": { "maxItems": 0 } }
+          }
+        }
+      ]
     },
     "signal": {
       "type": "object",

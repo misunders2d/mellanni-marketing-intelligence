@@ -2,13 +2,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
 import tempfile
 import unittest
 from datetime import UTC, datetime
 from email.utils import format_datetime
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from mellanni_marketing_intelligence.collector import Fetch, canonical_url, parse_feed
+from mellanni_marketing_intelligence.collector import (
+    Fetch,
+    _assert_public_response_peer,
+    _assert_public_url,
+    canonical_url,
+    parse_feed,
+)
 from mellanni_marketing_intelligence.pipeline import run_fetch
 
 
@@ -60,6 +70,62 @@ class PipelineTests(unittest.TestCase):
     def test_canonical_url_removes_tracking(self) -> None:
         self.assertEqual(canonical_url("HTTPS://Example.com/a/?utm_source=x&keep=1#part"), "https://example.com/a?keep=1")
 
+    def test_public_url_guard_rejects_private_dns_and_userinfo(self) -> None:
+        with patch(
+            "mellanni_marketing_intelligence.collector.socket.getaddrinfo",
+            return_value=[(2, 1, 6, "", ("127.0.0.1", 80))],
+        ):
+            with self.assertRaisesRegex(ValueError, "non-public address"):
+                _assert_public_url("http://metadata.example/latest")
+        with self.assertRaisesRegex(ValueError, "userinfo"):
+            _assert_public_url("https://user:pass@example.com/")
+
+    def test_response_peer_guard_closes_dns_rebinding_gap(self) -> None:
+        private_socket = SimpleNamespace(getpeername=lambda: ("127.0.0.1", 443))
+        response = SimpleNamespace(
+            fp=SimpleNamespace(raw=SimpleNamespace(_sock=private_socket))
+        )
+        with self.assertRaisesRegex(ValueError, "non-public address"):
+            _assert_public_response_peer(response)
+
+        public_socket = SimpleNamespace(getpeername=lambda: ("93.184.216.34", 443))
+        response.fp.raw._sock = public_socket
+        _assert_public_response_peer(response)
+
+    def test_discovered_feed_on_unapproved_host_is_never_fetched(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = self._write_config(root)
+            hostile_feed = "http://127.0.0.1/internal.xml"
+            calls: list[str] = []
+
+            def fetch(url: str) -> tuple[str, str]:
+                calls.append(url)
+                if url == HOME:
+                    return (
+                        f'<link rel="alternate" type="application/rss+xml" href="{hostile_feed}">',
+                        "text/html",
+                    )
+                raise OSError("no approved feed")
+
+            manifest = self._run(root, config, fetch)
+            self.assertNotIn(hostile_feed, calls)
+            self.assertEqual(manifest["exit_code"], 2)
+            self.assertTrue(
+                any(
+                    "host is not allowed" in warning
+                    for warning in manifest["source_statuses"][0]["warnings"]
+                )
+            )
+
+    def test_source_slug_cannot_escape_journal(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = self._write_config(root, slug="../../escape")
+            with self.assertRaisesRegex(ValueError, "invalid or duplicate source slug"):
+                self._run(root, config, fake_fetch)
+            self.assertFalse((root / "escape").exists())
+
     def test_parse_feed(self) -> None:
         document, _ = fake_fetch(FEED)
         entries = parse_feed(document, FEED)
@@ -67,21 +133,86 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(entries[0].url, ARTICLE)
 
     def test_parse_youtube_feed_keeps_nested_media_description(self) -> None:
-        document = """<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><entry><title>Episode</title><link rel="alternate" href="https://www.youtube.com/watch?v=abc"/><published>2026-09-07T00:00:00Z</published><media:group><media:description>Creator tags Amazon products.</media:description></media:group></entry></feed>"""
+        document = """<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><entry><title>Episode</title><link rel="alternate" href="https://www.youtube.com/watch?v=abc"/><published>2026-09-07T00:00:00Z</published><media:group><media:content url="https://www.youtube.com/v/abc"/><media:description>Creator tags Amazon products.</media:description></media:group></entry></feed>"""
         entries = parse_feed(document, "https://www.youtube.com/feeds/videos.xml")
         self.assertEqual(entries[0].summary, "Creator tags Amazon products.")
 
-    def test_fetch_writes_local_journal(self) -> None:
+    def test_fetch_writes_hash_bound_private_local_journal(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             config = self._write_config(root)
-            manifest = self._run(root, config, fake_fetch)
+            previous_umask = os.umask(0)
+            try:
+                manifest = self._run(root, config, fake_fetch)
+            finally:
+                os.umask(previous_umask)
             self.assertEqual(manifest["exit_code"], 0)
             self.assertEqual(manifest["item_count"], 1)
+            self.assertEqual(manifest["schema_version"], 3)
             item_path = Path(manifest["journal_dir"]) / str(manifest["items"][0]["journal_path"])
             self.assertTrue(item_path.is_file())
             self.assertIn("14 percent conversion lift", item_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                manifest["items"][0]["artifact_sha256"],
+                hashlib.sha256(item_path.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(stat.S_IMODE(item_path.stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(item_path.parent.stat().st_mode), 0o700)
             self.assertTrue(Path(manifest["manifest_path"]).is_file())
+
+    def test_distinct_same_content_items_get_distinct_artifacts(self) -> None:
+        second_article = "https://example.com/articles/second"
+        duplicate_shape_feed = f"""<rss><channel>
+        <item><title>Same title</title><link>{ARTICLE}</link><pubDate>{RECENT_RFC822}</pubDate><description>Same content.</description></item>
+        <item><title>Same title</title><link>{second_article}</link><pubDate>{RECENT_RFC822}</pubDate><description>Same content.</description></item>
+        </channel></rss>"""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = self._write_config(root)
+
+            def fetch(url: str) -> tuple[str, str]:
+                if url == HOME:
+                    return '<link rel="alternate" type="application/rss+xml" href="/feed.xml">', "text/html"
+                if url == FEED:
+                    return duplicate_shape_feed, "application/rss+xml"
+                if url in {ARTICLE, second_article}:
+                    return "<p>Same content.</p>", "text/html"
+                raise OSError(f"unexpected URL: {url}")
+
+            manifest = self._run(root, config, fetch)
+            paths = [row["journal_path"] for row in manifest["items"]]
+            self.assertEqual(manifest["item_count"], 2)
+            self.assertEqual(len(paths), len(set(paths)))
+            self.assertEqual(
+                len({row["item_id"] for row in manifest["items"]}), 2
+            )
+
+    def test_exact_duplicate_feed_items_are_deduplicated(self) -> None:
+        repeated_feed = f"""<rss><channel>
+        <item><title>Same title</title><link>{ARTICLE}</link><pubDate>{RECENT_RFC822}</pubDate><description>Same content.</description></item>
+        <item><title>Same title</title><link>{ARTICLE}</link><pubDate>{RECENT_RFC822}</pubDate><description>Same content.</description></item>
+        </channel></rss>"""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = self._write_config(root)
+
+            def fetch(url: str) -> tuple[str, str]:
+                if url == HOME:
+                    return '<link rel="alternate" type="application/rss+xml" href="/feed.xml">', "text/html"
+                if url == FEED:
+                    return repeated_feed, "application/rss+xml"
+                if url == ARTICLE:
+                    return "<p>Same content.</p>", "text/html"
+                raise OSError(f"unexpected URL: {url}")
+
+            manifest = self._run(root, config, fetch)
+            self.assertEqual(manifest["item_count"], 1)
+            self.assertTrue(
+                any(
+                    "deduplicated 1 repeated item" in warning
+                    for warning in manifest["source_statuses"][0]["warnings"]
+                )
+            )
 
     def test_probe_failure_is_preserved_when_later_feed_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -102,6 +233,27 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(status["accepted"], 1)
             self.assertEqual(manifest["source_failures"], 0)
             self.assertEqual(manifest["exit_code"], 0)
+
+    def test_stale_first_feed_does_not_hide_later_fresh_feed(self) -> None:
+        stale_feed = "https://example.com/stale.xml"
+        stale_document = """<rss><channel><item><title>Old item</title><link>https://example.com/old</link><pubDate>Tue, 25 Aug 2020 12:00:00 GMT</pubDate><description>Old.</description></item></channel></rss>"""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = self._write_config(root, feed_urls=[stale_feed, FEED])
+
+            def fetch(url: str) -> tuple[str, str]:
+                if url == stale_feed:
+                    return stale_document, "application/rss+xml"
+                return fake_fetch(url)
+
+            manifest = self._run(root, config, fetch)
+            status = manifest["source_statuses"][0]
+            self.assertEqual(status["method"], f"feed:{FEED}")
+            self.assertEqual(status["accepted"], 1)
+            self.assertEqual(status["feed_candidates_probed"], 2)
+            self.assertTrue(
+                any("no in-window entries" in warning for warning in status["warnings"])
+            )
 
     def test_feed_failures_are_preserved_when_html_fallback_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -174,7 +326,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(manifest["source_failures"], 0)
             self.assertEqual(manifest["exit_code"], 0)
 
-    def test_fallback_reason_distinguishes_home_failure_and_empty_index(self) -> None:
+    def test_valid_empty_explicit_feed_recovers_home_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             config = self._write_config(root, feed_urls=[FEED])
@@ -186,12 +338,11 @@ class PipelineTests(unittest.TestCase):
 
             manifest = self._run(root, config, fetch)
             status = manifest["source_statuses"][0]
-            self.assertIn("home_fetch=failed", status["fallback_reason"])
-            self.assertIn(f"feed_probes={status['feed_candidates_probed']}", status["fallback_reason"])
-            self.assertIn("feed_errors=0", status["fallback_reason"])
-            self.assertIn(f"feed_empty={status['feed_candidates_probed']}", status["fallback_reason"])
-            self.assertTrue(status["fallback_reason"].endswith("html_index=empty"))
-            self.assertTrue(any("home fetch failed" in error for error in status["errors"]))
+            self.assertEqual(status["method"], f"feed:{FEED}")
+            self.assertEqual(status["accepted"], 0)
+            self.assertEqual(status["errors"], [])
+            self.assertTrue(any("recovered by feed" in warning for warning in status["warnings"]))
+            self.assertEqual(manifest["exit_code"], 0)
 
     def test_twelve_explicit_feed_failures_are_not_sliced(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -241,7 +392,7 @@ class PipelineTests(unittest.TestCase):
             self.assertGreater(status["feed_candidates_truncated"], 0)
             self.assertTrue(any("feed candidate limit skipped" in warning for warning in status["warnings"]))
 
-    def test_empty_feed_warning_survives_later_success(self) -> None:
+    def test_valid_empty_explicit_feed_does_not_hide_later_items(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             empty_feed = "https://example.com/empty.xml"
@@ -255,10 +406,13 @@ class PipelineTests(unittest.TestCase):
             manifest = self._run(root, config, fetch)
             status = manifest["source_statuses"][0]
             self.assertEqual(status["errors"], [])
-            self.assertTrue(any("returned no entries" in warning for warning in status["warnings"]))
+            self.assertTrue(any("valid and currently empty" in warning for warning in status["warnings"]))
+            self.assertEqual(status["feed_candidates_probed"], 2)
             self.assertEqual(status["accepted"], 1)
+            self.assertEqual(status["method"], f"feed:{FEED}")
+            self.assertEqual(manifest["exit_code"], 0)
 
-    def test_empty_source_is_fatal(self) -> None:
+    def test_unrecognized_xml_is_not_a_valid_empty_feed(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             config = self._write_config(root, feed_urls=[FEED])
@@ -266,14 +420,14 @@ class PipelineTests(unittest.TestCase):
             def fetch(url: str) -> tuple[str, str]:
                 if url == HOME:
                     return "<html></html>", "text/html"
-                return "<rss><channel></channel></rss>", "application/rss+xml"
+                return "<Error><Message>rate limited</Message></Error>", "application/xml"
 
             manifest = self._run(root, config, fetch)
             self.assertEqual(manifest["source_failures"], 1)
             self.assertEqual(manifest["exit_code"], 2)
             self.assertIn("no usable feed or index", manifest["source_statuses"][0]["errors"][0])
 
-    def test_item_limit_truncation_is_fatal(self) -> None:
+    def test_item_limit_truncation_is_warning(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             config = self._write_config(root, feed_urls=[FEED], max_items=1)
@@ -293,7 +447,53 @@ class PipelineTests(unittest.TestCase):
             status = manifest["source_statuses"][0]
             self.assertEqual(status["accepted"], 1)
             self.assertEqual(status["item_limit_truncated"], 1)
-            self.assertEqual(manifest["exit_code"], 2)
+            self.assertTrue(any("item limit truncated" in warning for warning in status["warnings"]))
+            self.assertEqual(status["errors"], [])
+            self.assertEqual(manifest["exit_code"], 0)
+
+    def test_item_fetch_failure_with_feed_fallback_is_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = self._write_config(root, feed_urls=[FEED])
+
+            def fetch(url: str) -> tuple[str, str]:
+                if url == ARTICLE:
+                    raise OSError("article blocked")
+                return fake_fetch(url)
+
+            manifest = self._run(root, config, fetch)
+            status = manifest["source_statuses"][0]
+            self.assertEqual(status["accepted"], 1)
+            self.assertEqual(status["errors"], [])
+            self.assertTrue(any("used feed fallback" in warning for warning in status["warnings"]))
+            self.assertEqual(manifest["exit_code"], 0)
+
+    def test_youtube_watch_page_is_never_scraped(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            youtube_feed = "https://www.youtube.com/feeds/videos.xml?channel_id=test"
+            youtube_url = "https://m.youtube.com/watch?v=abc"
+            config = self._write_config(
+                root,
+                home_url="https://www.youtube.com/@test",
+                include_patterns=[],
+                feed_urls=[youtube_feed],
+            )
+            feed = f"""<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><entry><title>Episode title long enough</title><link rel="alternate" href="{youtube_url}"/><published>2026-09-07T00:00:00Z</published><media:group><media:content/><media:description>Episode evidence.</media:description></media:group></entry></feed>"""
+            calls: list[str] = []
+
+            def fetch(url: str) -> tuple[str, str]:
+                calls.append(url)
+                if url == "https://www.youtube.com/@test":
+                    return "<html></html>", "text/html"
+                if url == youtube_feed:
+                    return feed, "application/atom+xml"
+                raise AssertionError(f"watch page fetched: {url}")
+
+            manifest = self._run(root, config, fetch)
+            self.assertEqual(manifest["exit_code"], 0)
+            self.assertEqual(manifest["item_count"], 1)
+            self.assertNotIn(youtube_url, calls)
 
     def test_one_failed_source_fails_run_even_when_another_source_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -335,14 +535,14 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(manifest["source_failures"], 1)
             self.assertEqual(manifest["exit_code"], 2)
 
-    def test_manifest_v2_records_stable_run_parameters(self) -> None:
+    def test_manifest_v3_records_stable_run_parameters(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             config = self._write_config(root)
             expected_hash = hashlib.sha256(config.read_bytes()).hexdigest()
             first = self._run(root, config, fake_fetch)
             second = self._run(root, config, fake_fetch)
-            self.assertEqual(first["schema_version"], 2)
+            self.assertEqual(first["schema_version"], 3)
             self.assertEqual(first["run_params"]["since_days"], 8)
             self.assertEqual(first["run_params"]["fetch_workers"], 2)
             self.assertEqual(first["run_params"]["source_slugs"], [])

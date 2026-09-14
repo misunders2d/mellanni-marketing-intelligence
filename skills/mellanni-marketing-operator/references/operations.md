@@ -68,119 +68,78 @@ Read back with `list-sources --all` after mutation.
 
 ## Digest run
 
-1. Export exact enabled-source snapshot:
+Migrations `20260907180000_content_bound_digest_publication.sql`, `20260910120000_restore_preproof_publications.sql`, and `20260914120000_close_legacy_publication_path.sql` are historical production incident migrations, not a reusable publication shortcut. The restoration selected three reviewed rows by exact slug, draft state, null stored hash, and expected update timestamp, then recorded their reviewed hashes. Production readback separately confirmed those hashes matched the current public and private content. The closure migration leaves those records as audit evidence only; legacy records cannot authorize any future publication. Never apply or reuse the restoration without the closure in the same controlled maintenance window, and do not reopen application access between them. All future publication, including any changed restored digest, requires normal schema-2 verified proof. Applying any migration is a separate live mutation and needs explicit release approval.
+
+Current live authority contains 13 enabled sources. Start or resume the workflow
+with the same command every time:
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  export-sources --output "$RUN_DIR/sources.json"
+UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly
 ```
 
-2. Collect into external temporary journal:
+Runner creates a private `0700` `/tmp/mellanni-marketing-weekly/<run_id>/`
+workspace; runner-written sensitive files are `0600`. It owns these stages:
+
+- exact enabled-source snapshot and SHA-256;
+- bounded collection with fatal source errors separate from warnings;
+- agentic YouTube batch with concurrency 2, 600-second item timeout,
+  3,600-second whole-batch deadline, and 25-video preflight cap;
+- immutable manifest v3 with SHA-256 for every collected artifact, plus a cryptographically bound YouTube sidecar with separate Markdown and JSON hashes;
+- prior-published-digest snapshot;
+- manifest-bound evidence packet with one included/excluded `itemReviews` decision per collected item;
+- evidence/digest schema, prior-finding, and cross-reference validation;
+- draft write, full public/private content-hash readback, linked content-bound run proof, and one final immutable `run-receipt.json`.
+
+At `status: awaiting_synthesis`, use paths printed by runner. Read
+`references/editorial-contract.md`, collected item files, every YouTube artifact,
+and `prior-digests.json`. Never select one representative episode or compress a
+multi-episode source before episode review. Shallow podcast notes are insufficient
+evidence; record a no-digest outcome instead of inventing episode knowledge.
+
+Use this exact agent-only handoff:
+
+1. Call `mellanni_skills_list`; require `professional-memory-search` and
+   `source-routing`. Load both plus each provider playbook selected by routing.
+2. Call `mellanni_memory_advanced_search` once with one deduplicated three-to-five
+   query batch. Fetch selected records by ID. Never write Professional Memory.
+3. Call only provider read tools named by loaded playbooks. Provider tools/scripts
+   own calculations and joins. Preserve exact tool, inputs, window, grain, entity
+   IDs, and returned values.
+4. Write the printed `evidence-packet.json` path using the example contract. Set `collectionManifestSha256` to the exact `collection_manifest_sha256` returned by runner. Add exactly one `itemReviews` row for every manifest item: `included` with all supported Signal IDs, or `excluded` with no Signal IDs and a concrete item-specific reason. Preserve machine values; do not manually join or recalculate them.
+5. Write the printed `digest.json` path using the example contract. Use zero to four data-backed Mellanni Actions plus every material External Signal.
+
+If required skill, memory, or provider capability is absent, terminate the run
+through the same runner so it records a no-digest receipt and database run:
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence \
-  --config "$RUN_DIR/sources.json" \
-  --journal-root "$RUN_DIR/journal" \
-  --since-days 8
+UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly \
+  --fail-reason "missing required Mellanni MCP capability"
 ```
 
-3. Inspect manifest before synthesis. Success requires `exit_code: 0`. Any source error makes collection nonzero; record the failed run and stop. Do not manually substitute one item from a failed source.
-
-If collection failed, record the collection result once and stop:
+After both fixed files exist, run the unchanged command again:
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  record-run --manifest "$RUN_DIR/journal/RUN_ID/manifest.json"
+UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly
 ```
 
-If collection succeeded but no digest will be created, record the actual no-digest outcome and a concrete reason, then stop:
+Success is `outcome: draft` plus `readback_verified: true` in immutable receipt. Readback means slug, ID, status, title, summary, member body, admin-only private body, and canonical content hash all match validated input. Same slug updates an existing draft. Draft remains invisible to employee readers.
 
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  record-run --manifest "$RUN_DIR/journal/RUN_ID/manifest.json" \
-  --outcome no-digest --reason "REASON"
-```
+After full readiness validation, draft write, readback, and run linkage, database
+`runs.manifest` retains only compact non-raw proof: run ID; collection-manifest, YouTube-sidecar, evidence-packet, and canonical digest-content SHA-256 hashes; source/item/video counts; and `agentic_verified`.
+Retain compact `run-receipt.json` (and `run-state.json` when resume history is
+needed) locally. Collected pages, manifest, YouTube sidecar, per-episode
+JSON/Markdown, evidence packet, and digest input are disposable raw artifacts;
+never upload or publish them. Delete those raw files after verifying the draft
+receipt and linked run. Compact database proof remains publication gate.
 
-For a successful run that will produce a digest, skip `record-run`; step 8 records the manifest once and links it to the digest.
-
-4. Read `references/editorial-contract.md`. List prior digests with bodies before novelty classification:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  list-digests --status published
-```
-
-Select and deduplicate material ecommerce signals. Use stable IDs. Useful external knowledge remains eligible even when no Mellanni data exists.
-
-5. Use this exact MCP handoff; do not synthesize around a missing capability:
-
-   1. Call `mellanni_skills_list` and save its machine-readable result as `$RUN_DIR/mcp-skill-inventory.json`.
-   2. Require `professional-memory-search` and `source-routing` in that result. Call `mellanni_skills_get` for both, then for every provider playbook selected by source routing. If list/get/search tools or a required playbook are absent, run the command below and stop:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  record-run --manifest "$RUN_DIR/journal/RUN_ID/manifest.json" \
-  --outcome no-digest --reason "missing required Mellanni MCP capability"
-```
-   3. Call `mellanni_memory_advanced_search` once with one deduplicated three-to-five-query batch across all included signals. For selected matches, call `mellanni_memory_get` once per record ID. Never call memory write tools.
-   4. Call only read tools named by loaded provider playbooks. Save exact tool name, inputs, window/grain, entity IDs, and returned result under the matching `mellanniQueries` row. Provider tools/scripts own calculations and joins.
-   5. Build `$RUN_DIR/evidence-packet.json` from those machine-readable results. Preserve returned IDs and values; do not recalculate or manually join them. Validation fails when any used skill URI is absent from captured inventory.
-
-For YouTube evidence, process every YouTube item in the manifest before synthesis:
-
-```bash
-node --env-file=.env scripts/youtube-summary.mjs \
-  --manifest "$RUN_DIR/journal/RUN_ID/manifest.json" \
-  --output-dir "$RUN_DIR/youtube"
-```
-
-The batch writes separate JSON and Markdown for every video and updates the collection manifest with `youtube_summary`. Require `status: succeeded`, `expected == succeeded`, and `failed: 0`. Any mismatch stops the digest. Give downstream agents every episode artifact; never select one representative video.
-
-Review every podcast episode separately. If collected content contains only metadata or shallow show notes, mark that episode insufficient and stop rather than inventing episode knowledge. Preserve separate material findings and explicit exclusion reasons; never compress a multi-episode source into one sentence before episode review.
-
-6. Build private packet matching `examples/evidence-packet.example.json`. It contains exact source, memory, query, prior-digest, and skill evidence. Validate before synthesis:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  validate-evidence-packet --input "$RUN_DIR/evidence-packet.json"
-```
-
-7. Build digest input matching `examples/digest.example.json` only from validated packet. Use zero to four data-backed Mellanni Actions plus every material External Signal. Member-visible fields may include exact internal sales, other decision-useful business metrics, and business entity identifiers needed to act. Each Action keeps full structured admin-only detail in `privateDecision`; never copy raw query results, raw memory records, secrets, credentials, private auth/account/billing identifiers, or customer/employee PII. Validator/storage split removes `privateDecision` from the member-visible body. Validate cross-references locally without DB write:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  validate-digest --input "$RUN_DIR/digest.json" \
-  --evidence-packet "$RUN_DIR/evidence-packet.json"
-```
-
-8. Push draft and record collection plus private evidence packet once:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  push-digest --input "$RUN_DIR/digest.json" \
-  --evidence-packet "$RUN_DIR/evidence-packet.json" \
-  --manifest "$RUN_DIR/journal/RUN_ID/manifest.json"
-```
-
-Same slug updates existing digest. Draft is not employee-visible.
-
-9. Read back:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  list-digests --status draft
-```
-
-10. Publish only after explicit approval:
+Publish only after explicit approval:
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
   set-digest-state --slug DIGEST_SLUG --state published
 ```
 
-Verify with `list-digests --status published` and an authenticated reader request to the digest URL. To remove from the website without data loss, set state back to `draft` and verify the authenticated URL no longer resolves.
-
-11. Delete exact external temporary directory only after verified write/readback. Private packet is retained only inside private run record; never publish or commit it. Do not delete broad paths or unresolved variables.
+CLI requires a successful digest run linked to the exact current public/private content hash. Publication runs through the atomic `publish_digest_with_verified_run` database function; a proof for older content cannot authorize a changed draft. Missing, obsolete, content-mismatched, or unverified proof blocks. Raw local artifacts need not exist. If they still exist, `--manifest PATH` is an optional extra collection-proof match, never primary publication authority. Verify published readback and authenticated reader URL. Returning digest to draft remains reversible and needs no manifest.
 
 ## Membership and offboarding
 

@@ -1,6 +1,25 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedAt": "2026-08-31T12:00:00Z",
+  "collectionManifestSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "itemReviews": [
+    {
+      "itemId": "operator-source",
+      "disposition": "included",
+      "signalIds": [
+        "protect-margin-test"
+      ],
+      "reason": "Direct operator evidence supports the contribution-based decision signal."
+    },
+    {
+      "itemId": "creator-source",
+      "disposition": "included",
+      "signalIds": [
+        "creator-commerce-signal"
+      ],
+      "reason": "Direct creator-commerce evidence supports a material external signal."
+    }
+  ],
   "signals": [
     {
       "id": "protect-margin-test",
