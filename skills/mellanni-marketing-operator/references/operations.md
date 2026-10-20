@@ -106,7 +106,7 @@ Use this exact agent-only handoff:
    own calculations and joins. Preserve exact tool, inputs, window, grain, entity
    IDs, and returned values.
 4. Write the printed `evidence-packet.json` path using the example contract. Set `collectionManifestSha256` to the exact `collection_manifest_sha256` returned by runner. Add exactly one `itemReviews` row for every manifest item: `included` with all supported Signal IDs, or `excluded` with no Signal IDs and a concrete item-specific reason. Preserve machine values; do not manually join or recalculate them.
-5. Write the printed `digest.json` path using the example contract. Use zero to four data-backed Mellanni Actions plus every material External Signal.
+5. Write the printed `digest.json` path using the example contract. Select and consolidate the most important findings under the editorial contract: at most 10 employee-visible items total, including zero to four data-backed Mellanni Actions and the selected External Signals. Keep complete per-item and per-episode review evidence even when fewer findings are selected.
 
 If required skill, memory, or provider capability is absent, terminate the run
 through the same runner so it records a no-digest receipt and database run:

@@ -4,7 +4,17 @@
 
 Produce a reliable source of useful ecommerce knowledge for running Mellanni. Include material knowledge across Amazon, DTC, retail, marketplaces, creator commerce, advertising, retention, operations, and adjacent ecommerce channels. Do not discard a strong external signal merely because current Mellanni data cannot validate it.
 
-Podcast and YouTube review is episode-level. Give every collected episode a separate evidence record and either preserve each material finding or record a concrete exclusion reason. Never use one representative episode for a weekly set, and never collapse multiple material episode findings into one source-level sentence.
+Podcast and YouTube review is episode-level. Give every collected episode a separate evidence record and either preserve its material findings in the private evidence or record a concrete exclusion reason. Never use one representative episode for a weekly set or replace episode review with a generic source-level sentence. Related findings from separately reviewed episodes may be consolidated into one employee-visible item.
+
+## Selection and consolidation
+
+Future digests contain **at most 10 employee-visible items in total**, counting Mellanni Actions and External Signals together. Ten is a ceiling, not a quota; include fewer when only fewer findings are genuinely important.
+
+Prioritize material business impact, urgent deadlines or risks, meaningful novelty, and a concrete decision or validation step for Mellanni. Consolidate related findings across articles, episodes, and sources into one coherent item while preserving their important specifics and direct citations. Avoid separate items for every tool feature, metric, tactic, or minor variation on the same decision.
+
+Review all collected items and episodes in the private evidence ledger, then select the strongest consolidated items for the digest. Full review coverage does not require publishing every finding. Record concrete reasons for excluding lower-priority or redundant material.
+
+Apply this limit to future digest generation. Do not rewrite existing drafts or published digests solely to enforce it unless separately requested.
 
 ## Complete item review ledger
 
@@ -36,7 +46,7 @@ Do not assign owner, person, or role. Assignment happens outside digest.
 
 ### External Signal
 
-Use for strong ecommerce knowledge that helps Mellanni but does not have enough internal evidence for an Action. No numeric cap. Keep each Signal concise and material.
+Use for strong ecommerce knowledge that helps Mellanni but does not have enough internal evidence for an Action. External Signals share the total item limit in [Selection and consolidation](#selection-and-consolidation). Keep each Signal concise and material.
 
 Each Signal needs:
 

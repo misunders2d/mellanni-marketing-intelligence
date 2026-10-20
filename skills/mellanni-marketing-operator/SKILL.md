@@ -21,10 +21,11 @@ Read [references/editorial-contract.md](references/editorial-contract.md) before
 - Collection fails closed on fatal source acquisition/parsing errors. Recoverable item failures and truncation remain warnings. Never replace a fatally failed source with one manually selected item.
 - Run the repo-owned `mellanni-weekly` command for the current 13-source workflow. It owns snapshot, hash-bound collection, bounded YouTube processing, validation, draft write, exact readback, run link, and immutable receipt.
 - Every collected item needs a hash-verified local artifact. Every collected video also needs hash-verified agentic Markdown and JSON artifacts bound to the immutable manifest; one missing or changed artifact stops the digest.
-- Review every collected item once in `itemReviews`: included items name their Signal IDs; excluded items give a concrete reason. Keep podcast and YouTube findings episode-specific; never collapse a multi-episode week into one source-level sentence.
+- Review every collected item once in `itemReviews`: included items name their Signal IDs; excluded items give a concrete reason. Keep podcast and YouTube evidence episode-specific; review every episode before consolidating related findings for the digest.
 - Default to draft. Publish only on explicit user instruction.
 - Prefer reversible removal: pause source; return digest to draft. Hard delete requires explicit approval and a separate reviewed action.
 - Main editorial goal: retain strong, useful ecommerce knowledge across Amazon, DTC, retail, marketplaces, creator commerce, advertising, retention, operations, and adjacent channels. Do not narrow the digest to Amazon.
+- Future digests select at most 10 consolidated, high-importance employee-visible items across Actions and External Signals; follow the editorial contract's selection rule and leave existing digests unchanged unless requested.
 - Every included Action or External Signal must reconcile against Professional Memory. Do not mutate Professional Memory during digest generation.
 - If Mellanni skill inventory/load or Professional Memory search/get capability is absent, stop synthesis and rerun the same `mellanni-weekly` command with `--fail-reason "<exact missing capability>"`; require its immutable no-digest receipt. Never call `record-run` directly or substitute general knowledge.
 - Actions are Mellanni-specific and backed by private queried Mellanni evidence. External Signals remain included when useful even if no Mellanni evidence exists.
