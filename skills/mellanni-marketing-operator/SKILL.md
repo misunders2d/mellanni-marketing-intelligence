@@ -26,6 +26,7 @@ Read [references/editorial-contract.md](references/editorial-contract.md) before
 - Prefer reversible removal: pause source; return digest to draft. Hard delete requires explicit approval and a separate reviewed action.
 - Main editorial goal: retain strong, useful ecommerce knowledge across Amazon, DTC, retail, marketplaces, creator commerce, advertising, retention, operations, and adjacent channels. Do not narrow the digest to Amazon.
 - Future digests select at most 10 consolidated, high-importance employee-visible items across Actions and External Signals; follow the editorial contract's selection rule and leave existing digests unchanged unless requested.
+- Preserve the decision-useful payload: source-specific numbers, dates, deadlines, thresholds, workflow steps, examples, caveats, and test design. Concise means edited, not generic; never collapse several material current-week findings into a vague topic summary.
 - Every included Action or External Signal must reconcile against Professional Memory. Do not mutate Professional Memory during digest generation.
 - If Mellanni skill inventory/load or Professional Memory search/get capability is absent, stop synthesis and rerun the same `mellanni-weekly` command with `--fail-reason "<exact missing capability>"`; require its immutable no-digest receipt. Never call `record-run` directly or substitute general knowledge.
 - Actions are Mellanni-specific and backed by private queried Mellanni evidence. External Signals remain included when useful even if no Mellanni evidence exists.

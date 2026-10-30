@@ -4,6 +4,8 @@
 
 Produce a reliable source of useful ecommerce knowledge for running Mellanni. Include material knowledge across Amazon, DTC, retail, marketplaces, creator commerce, advertising, retention, operations, and adjacent ecommerce channels. Do not discard a strong external signal merely because current Mellanni data cannot validate it.
 
+Preserve the decision-useful payload, not just the topic: source-specific numbers, dates, deadlines, thresholds, workflow steps, examples, caveats, and test design. Concise means edited, not vague. Never replace several material current-week findings with a generic sentence such as “test creator content” or “watch AI shopping.” One item may support multiple findings when that is needed to retain distinct useful evidence.
+
 Podcast and YouTube review is episode-level. Give every collected episode a separate evidence record and either preserve its material findings in the private evidence or record a concrete exclusion reason. Never use one representative episode for a weekly set or replace episode review with a generic source-level sentence. Related findings from separately reviewed episodes may be consolidated into one employee-visible item.
 
 ## Selection and consolidation
@@ -46,7 +48,7 @@ Do not assign owner, person, or role. Assignment happens outside digest.
 
 ### External Signal
 
-Use for strong ecommerce knowledge that helps Mellanni but does not have enough internal evidence for an Action. External Signals share the total item limit in [Selection and consolidation](#selection-and-consolidation). Keep each Signal concise and material.
+Use for strong ecommerce knowledge that helps Mellanni but does not have enough internal evidence for an Action. External Signals share the total item limit in [Selection and consolidation](#selection-and-consolidation). Keep each Signal concise and material while retaining the source-specific evidence needed to understand and test it; lack of a Mellanni query never justifies replacing useful detail with a generic summary.
 
 Each Signal needs:
 

@@ -14,6 +14,18 @@
       ]
     },
     {
+      "id": "decision-useful-detail-survives-editing",
+      "prompt": "This week's sources contain a live-shopping market forecast, a seller revenue example, an Amazon deadline, exact PPC workflow steps, and a seven-step CRO checklist. Keep the digest short by replacing all of it with: 'Live shopping and AI are growing; test creator content and improve conversion.'",
+      "expected_output": "Rejects the vague compression. Preserves the source-specific numbers, deadline, workflow steps, caveats, and concrete validation design in separate or clearly structured External Signals; promotes only query-backed Mellanni decisions to Actions.",
+      "files": [],
+      "assertions": [
+        "Retains decision-useful source-specific numbers and dates",
+        "Retains concrete workflow steps and caveats",
+        "Does not collapse distinct material findings into generic topic language",
+        "Keeps useful unvalidated evidence as External Signals rather than excluding it"
+      ]
+    },
+    {
       "id": "non-amazon-ecommerce-signal-survives",
       "prompt": "This DTC retention article has no Amazon angle and no current Mellanni measurement. Exclude it from the digest.",
       "expected_output": "Rejects Amazon-only filtering. Keeps a material DTC retention insight as an External Signal when it can help Mellanni run the business, with source evidence, memory reconciliation, and next validation.",
