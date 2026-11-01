@@ -105,31 +105,55 @@ def _load_schema(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _validate_schema(document: dict[str, Any], path: Path, label: str) -> None:
+MAX_REPORTED_SCHEMA_ERRORS = 50
+
+
+def _schema_errors(document: dict[str, Any], path: Path, label: str) -> list[str]:
     validator = Draft202012Validator(_load_schema(path), format_checker=FormatChecker())
-    errors = sorted(validator.iter_errors(document), key=lambda error: list(error.path))
+    errors = sorted(
+        validator.iter_errors(document),
+        key=lambda error: [str(part) for part in error.absolute_path],
+    )
+    messages = [
+        f"{label} schema error at "
+        f"{'.'.join(str(part) for part in error.absolute_path) or '<root>'}: {error.message}"
+        for error in errors[:MAX_REPORTED_SCHEMA_ERRORS]
+    ]
+    if len(errors) > MAX_REPORTED_SCHEMA_ERRORS:
+        messages.append(
+            f"{label} has {len(errors) - MAX_REPORTED_SCHEMA_ERRORS} more schema error(s) not shown"
+        )
+    return messages
+
+
+def _raise_errors(errors: list[str]) -> None:
     if not errors:
         return
-    error = errors[0]
-    location = ".".join(str(part) for part in error.absolute_path) or "<root>"
-    raise ValueError(f"{label} schema error at {location}: {error.message}")
+    if len(errors) == 1:
+        raise ValueError(errors[0])
+    raise ValueError(
+        f"{len(errors)} validation errors:\n" + "\n".join(f"- {error}" for error in errors)
+    )
 
 
-def validate_evidence_packet(packet: dict[str, Any]) -> None:
-    _validate_schema(packet, EVIDENCE_SCHEMA_PATH, "evidence packet")
+def evidence_packet_errors(packet: dict[str, Any]) -> list[str]:
+    schema_errors = _schema_errors(packet, EVIDENCE_SCHEMA_PATH, "evidence packet")
+    if schema_errors:
+        return schema_errors
+    errors: list[str] = []
 
     signal_ids = [signal["id"] for signal in packet["signals"]]
     signal_id_set = set(signal_ids)
     if len(signal_ids) != len(signal_id_set):
-        raise ValueError("evidence packet signal IDs must be unique")
+        errors.append("evidence packet signal IDs must be unique")
 
     source_ids = {source["id"] for source in packet["sources"]}
     if len(source_ids) != len(packet["sources"]):
-        raise ValueError("evidence packet source IDs must be unique")
+        errors.append("evidence packet source IDs must be unique")
     for signal in packet["signals"]:
         missing = set(signal["sourceIds"]) - source_ids
         if missing:
-            raise ValueError(
+            errors.append(
                 f"evidence packet signal {signal['id']!r} references missing sources: "
                 + ", ".join(sorted(missing))
             )
@@ -137,20 +161,20 @@ def validate_evidence_packet(packet: dict[str, Any]) -> None:
     reviews = packet["itemReviews"]
     review_ids = [review["itemId"] for review in reviews]
     if len(review_ids) != len(set(review_ids)):
-        raise ValueError("evidence packet item review IDs must be unique")
+        errors.append("evidence packet item review IDs must be unique")
     included_reviews = {
         review["itemId"]: review
         for review in reviews
         if review["disposition"] == "included"
     }
     if set(included_reviews) != source_ids:
-        raise ValueError(
+        errors.append(
             "evidence packet included item reviews must exactly match packet sources"
         )
     for review in included_reviews.values():
         missing = set(review["signalIds"]) - signal_id_set
         if missing:
-            raise ValueError(
+            errors.append(
                 f"evidence packet item review {review['itemId']!r} references missing signals: "
                 + ", ".join(sorted(missing))
             )
@@ -161,7 +185,7 @@ def validate_evidence_packet(packet: dict[str, Any]) -> None:
             if signal["id"] in review["signalIds"]
         }
         if reviewed_sources != set(signal["sourceIds"]):
-            raise ValueError(
+            errors.append(
                 f"evidence packet signal {signal['id']!r} source IDs differ from item reviews"
             )
 
@@ -172,34 +196,34 @@ def validate_evidence_packet(packet: dict[str, Any]) -> None:
         reconciliation_id = reconciliation["id"]
         finding_id = reconciliation["findingId"]
         if reconciliation_id in reconciliation_ids:
-            raise ValueError("evidence packet memory reconciliation IDs must be unique")
+            errors.append("evidence packet memory reconciliation IDs must be unique")
         if finding_id in reconciled_findings:
-            raise ValueError(
+            errors.append(
                 f"evidence packet finding {finding_id!r} has multiple memory reconciliations"
             )
         reconciliation_ids.add(reconciliation_id)
         reconciled_findings.add(finding_id)
-        if finding_id not in signal_ids:
-            raise ValueError(
+        if finding_id not in signal_id_set:
+            errors.append(
                 f"memory reconciliation {reconciliation_id!r} references a missing signal"
             )
         missing = set(reconciliation["recordIds"]) - record_ids
         if missing:
-            raise ValueError(
+            errors.append(
                 f"memory reconciliation {reconciliation_id!r} references missing records: "
                 + ", ".join(sorted(missing))
             )
         has_records = bool(reconciliation["recordIds"])
         if reconciliation["outcome"] == "no-relevant-record" and has_records:
-            raise ValueError("no-relevant-record reconciliation cannot cite memory records")
+            errors.append("no-relevant-record reconciliation cannot cite memory records")
         if reconciliation["outcome"] != "no-relevant-record" and not has_records:
-            raise ValueError(
+            errors.append(
                 f"memory reconciliation {reconciliation_id!r} needs at least one record"
             )
 
-    missing_reconciliations = set(signal_ids) - reconciled_findings
+    missing_reconciliations = signal_id_set - reconciled_findings
     if missing_reconciliations:
-        raise ValueError(
+        errors.append(
             "evidence packet signals need memory reconciliation: "
             + ", ".join(sorted(missing_reconciliations))
         )
@@ -207,16 +231,16 @@ def validate_evidence_packet(packet: dict[str, Any]) -> None:
     query_ids: set[str] = set()
     for query in packet["mellanniQueries"]:
         if query["id"] in query_ids:
-            raise ValueError("evidence packet Mellanni query IDs must be unique")
+            errors.append("evidence packet Mellanni query IDs must be unique")
         query_ids.add(query["id"])
-        if query["findingId"] not in signal_ids:
-            raise ValueError(
+        if query["findingId"] not in signal_id_set:
+            errors.append(
                 f"Mellanni query {query['id']!r} references a missing signal"
             )
 
     skill_uris = [skill["uri"] for skill in packet["skillInventory"]]
     if len(skill_uris) != len(set(skill_uris)):
-        raise ValueError("evidence packet skill inventory URIs must be unique")
+        errors.append("evidence packet skill inventory URIs must be unique")
     skill_inventory = set(skill_uris)
     used_skill_uris = {
         packet["memoryBatch"]["skillUri"],
@@ -224,10 +248,15 @@ def validate_evidence_packet(packet: dict[str, Any]) -> None:
     }
     missing_skills = used_skill_uris - skill_inventory
     if missing_skills:
-        raise ValueError(
+        errors.append(
             "evidence packet uses skills absent from captured inventory: "
             + ", ".join(sorted(missing_skills))
         )
+    return errors
+
+
+def validate_evidence_packet(packet: dict[str, Any]) -> None:
+    _raise_errors(evidence_packet_errors(packet))
 
 
 def _string_fields(value: Any, path: str = "body") -> list[tuple[str, str]]:
@@ -279,7 +308,8 @@ def _mask_business_identifiers(value: str) -> str:
     return value
 
 
-def _validate_member_visible_content(document: dict[str, Any]) -> None:
+def _member_visible_content_errors(document: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
     for location, value in _member_visible_text(document):
         for label, pattern in MEMBER_VISIBLE_RESTRICTED_PATTERNS:
             candidate = (
@@ -288,30 +318,39 @@ def _validate_member_visible_content(document: dict[str, Any]) -> None:
                 else value
             )
             if pattern.search(candidate):
-                raise ValueError(
+                errors.append(
                     f"authenticated digest {location} contains a restricted {label}"
                 )
     expected_privacy = _derived_member_visible_privacy(document)
     if document["privacy"] != expected_privacy:
-        raise ValueError(
+        errors.append(
             "digest privacy flags do not match member-visible content: "
             + json.dumps(expected_privacy, sort_keys=True)
         )
+    return errors
 
 
-def validate_digest(document: dict[str, Any], packet: dict[str, Any]) -> None:
-    _validate_schema(document, DIGEST_SCHEMA_PATH, "digest")
-    validate_evidence_packet(packet)
-    date.fromisoformat(document["date"])
-    _validate_member_visible_content(document)
+def digest_errors(document: dict[str, Any], packet: dict[str, Any]) -> list[str]:
+    schema_errors = [
+        *_schema_errors(document, DIGEST_SCHEMA_PATH, "digest"),
+        *_schema_errors(packet, EVIDENCE_SCHEMA_PATH, "evidence packet"),
+    ]
+    if schema_errors:
+        return schema_errors
+    errors = evidence_packet_errors(packet)
+    try:
+        date.fromisoformat(document["date"])
+    except ValueError as exc:
+        errors.append(f"digest date is invalid: {exc}")
+    errors.extend(_member_visible_content_errors(document))
 
     findings = [*document["actions"], *document["signals"]]
     if not findings:
-        raise ValueError("digest needs at least one Action or External Signal")
+        errors.append("digest needs at least one Action or External Signal")
 
     finding_ids = [finding["id"] for finding in findings]
     if len(finding_ids) != len(set(finding_ids)):
-        raise ValueError("digest Action and External Signal IDs must be unique")
+        errors.append("digest Action and External Signal IDs must be unique")
 
     packet_signals = {signal["id"]: signal for signal in packet["signals"]}
     digest_sources = {source["id"] for source in document["sources"]}
@@ -328,18 +367,20 @@ def validate_digest(document: dict[str, Any], packet: dict[str, Any]) -> None:
     }
 
     if digest_sources - packet_sources:
-        raise ValueError("digest sources must exist in private evidence packet")
+        errors.append("digest sources must exist in private evidence packet")
     if len(digest_sources) != len(document["sources"]):
-        raise ValueError("digest source IDs must be unique")
+        errors.append("digest source IDs must be unique")
     if set(finding_ids) != set(packet_signals):
-        raise ValueError("digest findings must exactly match selected packet signals")
+        errors.append("digest findings must exactly match selected packet signals")
 
     packet_source_rows = {source["id"]: source for source in packet["sources"]}
     for source in document["sources"]:
-        packet_source = packet_source_rows[source["id"]]
+        packet_source = packet_source_rows.get(source["id"])
+        if packet_source is None:
+            continue
         for field in ("name", "url", "note", "publishedAt"):
             if source.get(field) != packet_source.get(field):
-                raise ValueError(
+                errors.append(
                     f"digest source {source['id']!r} {field} differs from packet"
                 )
 
@@ -347,22 +388,23 @@ def validate_digest(document: dict[str, Any], packet: dict[str, Any]) -> None:
         finding_id = finding["id"]
         packet_signal = packet_signals.get(finding_id)
         if packet_signal is None:
-            raise ValueError(f"digest finding {finding_id!r} has no packet signal")
+            errors.append(f"digest finding {finding_id!r} has no packet signal")
+            continue
         if finding["externalSignal"] != packet_signal["statement"]:
-            raise ValueError(
+            errors.append(
                 f"digest finding {finding_id!r} changes packet external signal text"
             )
         if set(finding["sourceIds"]) != set(packet_signal["sourceIds"]):
-            raise ValueError(
+            errors.append(
                 f"digest finding {finding_id!r} source IDs differ from packet signal"
             )
         if set(finding["sourceIds"]) - digest_sources:
-            raise ValueError(f"digest finding {finding_id!r} references a missing public source")
+            errors.append(f"digest finding {finding_id!r} references a missing public source")
 
         memory_refs = finding["memory"]["privateEvidenceRefs"]
         unknown_memory_refs = set(memory_refs) - set(reconciliation_by_id)
         if unknown_memory_refs:
-            raise ValueError(
+            errors.append(
                 f"digest finding {finding_id!r} cites unknown memory reconciliation(s): "
                 + ", ".join(sorted(unknown_memory_refs))
             )
@@ -379,29 +421,30 @@ def validate_digest(document: dict[str, Any], packet: dict[str, Any]) -> None:
                 if reference in reconciliation_by_id
             ]
         if len(matching_reconciliations) != 1:
-            raise ValueError(
+            errors.append(
                 f"digest finding {finding_id!r} must resolve to one memory reconciliation"
             )
-        reconciliation = matching_reconciliations[0]
-        if reconciliation["findingId"] != finding_id:
-            raise ValueError(
-                f"digest finding {finding_id!r} cites another finding's memory reconciliation"
-            )
-        for field in ("outcome", "comparison", "decisionImpact"):
-            if finding["memory"][field] != reconciliation[field]:
-                raise ValueError(
-                    f"digest finding {finding_id!r} memory {field} differs from packet"
+        else:
+            reconciliation = matching_reconciliations[0]
+            if reconciliation["findingId"] != finding_id:
+                errors.append(
+                    f"digest finding {finding_id!r} cites another finding's memory reconciliation"
                 )
+            for field in ("outcome", "comparison", "decisionImpact"):
+                if finding["memory"][field] != reconciliation[field]:
+                    errors.append(
+                        f"digest finding {finding_id!r} memory {field} differs from packet"
+                    )
 
         novelty = finding["novelty"]
         if novelty["status"] == "supersedes" and novelty["reference"] not in prior_references:
-            raise ValueError(
+            errors.append(
                 f"digest finding {finding_id!r} supersedes an unknown prior finding"
             )
 
         for skill in finding["skillReferences"]:
             if skill["uri"] not in skill_inventory:
-                raise ValueError(
+                errors.append(
                     f"digest finding {finding_id!r} cites skill absent from packet inventory: "
                     + skill["uri"]
                 )
@@ -409,9 +452,10 @@ def validate_digest(document: dict[str, Any], packet: dict[str, Any]) -> None:
     for action in document["actions"]:
         query_refs = action["mellanniEvidence"]["privateQueryRefs"]
         if any(reference not in queries_by_id for reference in query_refs):
-            raise ValueError(f"Action {action['id']!r} references a missing Mellanni query")
+            errors.append(f"Action {action['id']!r} references a missing Mellanni query")
+            continue
         if any(queries_by_id[reference]["findingId"] != action["id"] for reference in query_refs):
-            raise ValueError(f"Action {action['id']!r} cites another finding's Mellanni query")
+            errors.append(f"Action {action['id']!r} cites another finding's Mellanni query")
         queried_entity_ids = {
             entity_id
             for reference in query_refs
@@ -419,10 +463,15 @@ def validate_digest(document: dict[str, Any], packet: dict[str, Any]) -> None:
         }
         private_entity_ids = set(action["privateDecision"]["entityIds"])
         if private_entity_ids - queried_entity_ids:
-            raise ValueError(
+            errors.append(
                 f"Action {action['id']!r} private decision cites an entity absent from "
                 "its Mellanni queries"
             )
+    return errors
+
+
+def validate_digest(document: dict[str, Any], packet: dict[str, Any]) -> None:
+    _raise_errors(digest_errors(document, packet))
 
 
 def _project_member_visible_body(
