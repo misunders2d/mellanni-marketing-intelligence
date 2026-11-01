@@ -8,10 +8,6 @@
     "Profitability",
     "Creator commerce"
   ],
-  "privacy": {
-    "exactValuesPublished": true,
-    "businessIdentifiersPublished": true
-  },
   "actions": [
     {
       "id": "protect-margin-test",

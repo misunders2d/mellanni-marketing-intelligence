@@ -842,7 +842,7 @@ class SupabaseContentTests(unittest.TestCase):
             evidence_query["findingId"] = finding_id
             packet["mellanniQueries"].append(evidence_query)
 
-        with self.assertRaisesRegex(ValueError, "too long"):
+        with self.assertRaisesRegex(ValueError, "actions: has 5 items; expected at most 4"):
             digest_to_row(digest, publish=False, evidence_packet=packet)
 
     def test_digest_validation_reports_every_independent_error(self) -> None:
@@ -943,8 +943,9 @@ class SupabaseContentTests(unittest.TestCase):
 
     @patch("mellanni_marketing_intelligence.supabase_content._request_json")
     def test_digest_push_uses_atomic_private_body_rpc(self, request_json) -> None:
-        request_json.return_value = [
-            {"id": "digest-id", "slug": "weekly-intelligence-brief", "status": "draft"}
+        request_json.side_effect = [
+            [],
+            [{"id": "digest-id", "slug": "weekly-intelligence-brief", "status": "draft"}],
         ]
         digest, packet = example_documents()
 
@@ -963,6 +964,43 @@ class SupabaseContentTests(unittest.TestCase):
         self.assertIn("p_private_body", payload)
         self.assertRegex(payload["p_content_sha256"], r"^[0-9a-f]{64}$")
         self.assertNotIn("private_body", payload["p_body"])
+
+    @patch("mellanni_marketing_intelligence.supabase_content._request_json")
+    def test_digest_push_refuses_to_unpublish_existing_slug(self, request_json) -> None:
+        request_json.return_value = [{"id": "digest-id", "status": "published"}]
+        digest, packet = example_documents()
+
+        with self.assertRaisesRegex(ValueError, "currently published"):
+            push_digest(
+                "https://example.supabase.co",
+                "secret",
+                digest,
+                publish=False,
+                evidence_packet=packet,
+            )
+        request_json.assert_called_once()
+        self.assertIn("slug=eq.", request_json.call_args.args[2])
+
+    @patch("mellanni_marketing_intelligence.supabase_content._request_json")
+    def test_digest_push_can_explicitly_replace_published_slug(self, request_json) -> None:
+        request_json.side_effect = [
+            [{"id": "digest-id", "status": "published"}],
+            [{"id": "digest-id", "status": "draft"}],
+        ]
+        digest, packet = example_documents()
+
+        stored = push_digest(
+            "https://example.supabase.co",
+            "secret",
+            digest,
+            publish=False,
+            evidence_packet=packet,
+            replace_published=True,
+        )
+        self.assertEqual(stored["status"], "draft")
+        self.assertEqual(
+            request_json.call_args.args[2], "rpc/upsert_digest_with_private_body"
+        )
 
     def test_content_hash_rpc_migration_matches_digest_payload(self) -> None:
         migration = (
@@ -1091,17 +1129,16 @@ class SupabaseContentTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, expected_error):
                     digest_to_row(digest, publish=False, evidence_packet=packet)
 
-    def test_authenticated_digest_rejects_false_negative_privacy_flags(self) -> None:
+    def test_member_visible_privacy_flags_are_derived_not_agent_supplied(self) -> None:
         digest, packet = example_documents()
-        digest["privacy"] = {
-            "exactValuesPublished": False,
-            "businessIdentifiersPublished": False,
-        }
+        self.assertNotIn("privacy", digest)
+        row = digest_to_row(digest, publish=False, evidence_packet=packet)
+        self.assertEqual(
+            row["body"]["privacy"],
+            {"exactValuesPublished": True, "businessIdentifiersPublished": True},
+        )
 
-        with self.assertRaisesRegex(ValueError, "privacy flags do not match"):
-            digest_to_row(digest, publish=False, evidence_packet=packet)
-
-    def test_authenticated_digest_rejects_false_positive_privacy_flags(self) -> None:
+    def test_agent_supplied_privacy_flags_are_ignored(self) -> None:
         digest, packet = example_documents()
         digest["actions"] = []
         keep_packet_signals(digest, packet, {"creator-commerce-signal"})
@@ -1110,7 +1147,34 @@ class SupabaseContentTests(unittest.TestCase):
             "businessIdentifiersPublished": True,
         }
 
-        with self.assertRaisesRegex(ValueError, "privacy flags do not match"):
+        row = digest_to_row(digest, publish=False, evidence_packet=packet)
+        self.assertEqual(
+            row["body"]["privacy"],
+            {"exactValuesPublished": False, "businessIdentifiersPublished": False},
+        )
+
+    def test_digest_caps_actions_and_signals_at_ten_combined(self) -> None:
+        digest, packet = example_documents()
+        signal = digest["signals"][0]
+        packet_signal = packet["signals"][1]
+        reconciliation = packet["memoryReconciliations"][1]
+        review = packet["itemReviews"][1]
+        for index in range(9):
+            finding_id = f"extra-signal-{index}"
+            candidate = deepcopy(signal)
+            candidate["id"] = finding_id
+            candidate["memory"]["privateEvidenceRefs"] = [f"memory-extra-{index}"]
+            digest["signals"].append(candidate)
+            extra_signal = deepcopy(packet_signal)
+            extra_signal["id"] = finding_id
+            packet["signals"].append(extra_signal)
+            memory = deepcopy(reconciliation)
+            memory["id"] = f"memory-extra-{index}"
+            memory["findingId"] = finding_id
+            packet["memoryReconciliations"].append(memory)
+            review["signalIds"].append(finding_id)
+
+        with self.assertRaisesRegex(ValueError, "at most 10 combined"):
             digest_to_row(digest, publish=False, evidence_packet=packet)
 
     def test_authenticated_digest_allows_long_numeric_campaign_id(self) -> None:

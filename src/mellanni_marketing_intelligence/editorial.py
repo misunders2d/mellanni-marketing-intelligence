@@ -106,6 +106,16 @@ def _load_schema(path: Path) -> dict[str, Any]:
 
 
 MAX_REPORTED_SCHEMA_ERRORS = 50
+MAX_DIGEST_FINDINGS = 10
+
+
+def _short_schema_message(error: Any) -> str:
+    if error.validator in {"maxItems", "minItems"}:
+        count = len(error.instance) if isinstance(error.instance, list) else "?"
+        limit = "at most" if error.validator == "maxItems" else "at least"
+        return f"has {count} items; expected {limit} {error.validator_value}"
+    message = str(error.message)
+    return message if len(message) <= 300 else message[:297] + "..."
 
 
 def _schema_errors(document: dict[str, Any], path: Path, label: str) -> list[str]:
@@ -116,7 +126,8 @@ def _schema_errors(document: dict[str, Any], path: Path, label: str) -> list[str
     )
     messages = [
         f"{label} schema error at "
-        f"{'.'.join(str(part) for part in error.absolute_path) or '<root>'}: {error.message}"
+        f"{'.'.join(str(part) for part in error.absolute_path) or '<root>'}: "
+        f"{_short_schema_message(error)}"
         for error in errors[:MAX_REPORTED_SCHEMA_ERRORS]
     ]
     if len(errors) > MAX_REPORTED_SCHEMA_ERRORS:
@@ -321,12 +332,6 @@ def _member_visible_content_errors(document: dict[str, Any]) -> list[str]:
                 errors.append(
                     f"authenticated digest {location} contains a restricted {label}"
                 )
-    expected_privacy = _derived_member_visible_privacy(document)
-    if document["privacy"] != expected_privacy:
-        errors.append(
-            "digest privacy flags do not match member-visible content: "
-            + json.dumps(expected_privacy, sort_keys=True)
-        )
     return errors
 
 
@@ -347,6 +352,11 @@ def digest_errors(document: dict[str, Any], packet: dict[str, Any]) -> list[str]
     findings = [*document["actions"], *document["signals"]]
     if not findings:
         errors.append("digest needs at least one Action or External Signal")
+    if len(findings) > MAX_DIGEST_FINDINGS:
+        errors.append(
+            f"digest has {len(findings)} Actions and External Signals; "
+            f"select at most {MAX_DIGEST_FINDINGS} combined"
+        )
 
     finding_ids = [finding["id"] for finding in findings]
     if len(finding_ids) != len(set(finding_ids)):

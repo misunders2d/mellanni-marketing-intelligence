@@ -11,7 +11,6 @@
     "title",
     "summary",
     "topics",
-    "privacy",
     "actions",
     "signals",
     "sources"
@@ -29,6 +28,7 @@
     },
     "privacy": {
       "type": "object",
+      "description": "Optional and ignored. The runtime derives both flags from member-visible content; omit this field.",
       "additionalProperties": false,
       "required": ["exactValuesPublished", "businessIdentifiersPublished"],
       "properties": {
@@ -49,6 +49,7 @@
     },
     "signals": {
       "type": "array",
+      "maxItems": 10,
       "items": { "$ref": "#/$defs/signal" }
     },
     "sources": {
