@@ -85,9 +85,11 @@ workspace; runner-written sensitive files are `0600`. It owns these stages:
 - agentic YouTube batch with concurrency 2, 600-second item timeout,
   3,600-second whole-batch deadline, and 25-video preflight cap;
 - immutable manifest v3 with SHA-256 for every collected artifact, plus a cryptographically bound YouTube sidecar with separate Markdown and JSON hashes;
-- prior-published-digest snapshot;
+- prior-published-digest snapshot plus `prior-findings-index.json` listing every citable prior finding;
+- `evidence-packet.scaffold.json` pre-filled with manifest hash, one `itemReviews` row per collected item (title, URL, source), and one source stub per item; items already cited by a published digest are pre-excluded with a deterministic reason;
+- runner-generated digest slug `<week_start>-weekly-marketing-digest`, with `week_start` the Monday of the current America/Los_Angeles week;
 - manifest-bound evidence packet with one included/excluded `itemReviews` decision per collected item;
-- evidence/digest schema, prior-finding, and cross-reference validation;
+- evidence/digest schema, prior-finding, and cross-reference validation, reporting every error in one pass;
 - draft write, full public/private content-hash readback, linked content-bound run proof, and one final immutable `run-receipt.json`.
 
 At `status: awaiting_synthesis`, use paths printed by runner. Read
@@ -105,8 +107,8 @@ Use this exact agent-only handoff:
 3. Call only provider read tools named by loaded playbooks. Provider tools/scripts
    own calculations and joins. Preserve exact tool, inputs, window, grain, entity
    IDs, and returned values.
-4. Write the printed `evidence-packet.json` path using the example contract. Set `collectionManifestSha256` to the exact `collection_manifest_sha256` returned by runner. Add exactly one `itemReviews` row for every manifest item: `included` with all supported Signal IDs, or `excluded` with no Signal IDs and a concrete item-specific reason. Preserve machine values; do not manually join or recalculate them.
-5. Write the printed `digest.json` path using the example contract. Select and consolidate the most important findings under the editorial contract: at most 10 employee-visible items total (validation rejects more), including zero to four data-backed Mellanni Actions and the selected External Signals. Keep complete per-item and per-episode review evidence even when fewer findings are selected.
+4. Copy the printed `evidence_packet_scaffold` to the printed `write_evidence_packet` path and fill only judgment fields. Keep the pre-filled manifest hash, item IDs, URLs, and source stubs. Set every `itemReviews` row: `included` with all supported Signal IDs, or `excluded` with no Signal IDs and a concrete item-specific reason (pre-excluded repeats may be re-included only for a material update). Keep source stubs only for included items and write each kept stub's `note`. Copy relevant entries from `prior_findings_index` into `priorDigestFindings`. Add signals, memory batch/records/reconciliations, Mellanni queries, and skill inventory from MCP results. Preserve machine values; do not manually join or recalculate them.
+5. Run the printed `scaffold_digest_command` (`mellanni-weekly --scaffold-digest`). It writes `digest.scaffold.json` with slug, date, sources, external signal text, source IDs, memory outcome/comparison/decision impact, query refs, and private entity IDs copied from the packet; packet signals with Mellanni queries become Actions, the rest External Signals. Fill only blank reasoning fields (titles, summary, topics, guidance, why it matters, next validation, timebox, KPI, conditions, confidence, limitations, novelty, skill references, entity scope, conclusion, private decision text) and save it to the printed `write_digest` path. Drop any finding that does not make the final selection from both files. Omit `privacy`; the runtime derives it. Select and consolidate the most important findings under the editorial contract: at most 10 employee-visible items total (validation rejects more), including zero to four data-backed Mellanni Actions and the selected External Signals. Keep complete per-item and per-episode review evidence even when fewer findings are selected.
 
 If required skill, memory, or provider capability is absent, terminate the run
 through the same runner so it records a no-digest receipt and database run:
@@ -116,11 +118,21 @@ UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly \
   --fail-reason "missing required Mellanni MCP capability"
 ```
 
+Before resuming, run the offline dry run until it reports `status: ready`:
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly --check
+```
+
+`--check` runs the full readiness chain (manifest and YouTube binding, item-review coverage, prior-finding binding, digest validation, run proof) against the active run. It uses no credentials, writes nothing to the database, and leaves run state unchanged. It exits 0 only when the real run would pass validation and lists every error otherwise.
+
 After both fixed files exist, run the unchanged command again:
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly
 ```
+
+Packet or digest validation errors, including malformed JSON and a wrong slug, are resumable: the runner returns `status: validation_failed` with every error, keeps the same `run_id` at `awaiting_synthesis`, and records nothing in the database. Fix the files and rerun; collection and YouTube processing are not repeated. Only a broken runner-owned manifest/YouTube invariant or an explicit `--fail-reason` ends the run with a no-digest receipt.
 
 Success is `outcome: draft` plus `readback_verified: true` in immutable receipt. Readback means slug, ID, status, title, summary, member body, admin-only private body, and canonical content hash all match validated input. Same slug updates an existing draft. A slug that is currently published is refused, because the write would return the live digest to draft; `push-digest --replace-published` is the explicit override. Draft remains invisible to employee readers.
 

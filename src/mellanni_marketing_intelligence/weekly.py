@@ -9,21 +9,24 @@ from pathlib import Path
 import stat
 import subprocess
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from .editorial import error_messages, evidence_packet_errors
 from .pipeline import run_fetch
+from .scaffold import digest_scaffold, evidence_packet_scaffold, prior_findings_index
 from .supabase_content import (
     PROJECT_ROOT,
     SUPABASE_PROJECT_REF,
     build_run_proof,
     credentials,
     digest_to_row,
+    evidence_packet_manifest_errors,
     fetch_enabled_sources,
     list_digests,
     push_digest,
     record_run,
     require_digest_readback,
     require_digest_ready_manifest,
-    require_evidence_packet_bound_to_manifest,
     require_prior_digest_findings_bound,
     source_rows_to_config,
 )
@@ -32,6 +35,9 @@ from .supabase_content import (
 DEFAULT_RUN_ROOT = Path(
     os.environ.get("MELLANNI_WEEKLY_RUN_ROOT", "/tmp/mellanni-marketing-weekly")
 )
+PACIFIC = ZoneInfo("America/Los_Angeles")
+DIGEST_SLUG_SUFFIX = "weekly-marketing-digest"
+RESUME_COMMAND = "UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly"
 
 
 def _now() -> str:
@@ -81,8 +87,12 @@ def _assert_safe_resume_tree(run_root: Path, run_dir: Path) -> None:
 
 
 def _week_start() -> str:
-    today = datetime.now(UTC).date()
+    today = datetime.now(PACIFIC).date()
     return (today - timedelta(days=today.weekday())).isoformat()
+
+
+def _digest_slug(state: dict[str, Any]) -> str:
+    return f"{state['week_start']}-{DIGEST_SLUG_SUFFIX}"
 
 
 def _invocation(args: argparse.Namespace) -> dict[str, Any]:
@@ -154,7 +164,10 @@ def _new_run(
             "source_snapshot": str(run_dir / "sources.json"),
             "evidence_packet": str(run_dir / "evidence-packet.json"),
             "digest": str(run_dir / "digest.json"),
+            "evidence_packet_scaffold": str(run_dir / "evidence-packet.scaffold.json"),
+            "digest_scaffold": str(run_dir / "digest.scaffold.json"),
             "prior_digests": str(run_dir / "prior-digests.json"),
+            "prior_findings_index": str(run_dir / "prior-findings-index.json"),
             "state": str(run_dir / "run-state.json"),
             "receipt": str(run_dir / "run-receipt.json"),
         },
@@ -357,6 +370,233 @@ def _run_youtube(
     return value
 
 
+def _run_path(state: dict[str, Any], run_dir: Path, name: str, filename: str) -> Path:
+    # Runs started before scaffolding existed have no stored path for it.
+    return Path(state.get("paths", {}).get(name) or run_dir / filename)
+
+
+def _load_agent_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | None:
+    if not path.is_file():
+        errors.append(f"{label} is missing: {path}")
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        errors.append(f"{label} is not valid JSON ({path}): {exc}")
+        return None
+    if not isinstance(value, dict):
+        errors.append(f"{label} must be a JSON object: {path}")
+        return None
+    return value
+
+
+def _collect_errors(errors: list[str], check: Any, *args: Any, **kwargs: Any) -> Any:
+    try:
+        return check(*args, **kwargs)
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        errors.extend(error_messages(exc))
+        return None
+
+
+def _synthesis_errors(
+    state: dict[str, Any], manifest: dict[str, Any], manifest_path: Path
+) -> tuple[list[str], dict[str, Any] | None]:
+    """Validate agent-authored synthesis files without side effects.
+
+    Returns every error found in one pass, or the validated documents plus the
+    expected stored row and run proof when the files are ready.
+    """
+    paths = state["paths"]
+    errors: list[str] = []
+    packet = _load_agent_json(Path(paths["evidence_packet"]), "evidence packet", errors)
+    digest = _load_agent_json(Path(paths["digest"]), "digest", errors)
+    prior = json.loads(Path(paths["prior_digests"]).read_text(encoding="utf-8"))
+    if packet is not None:
+        errors.extend(evidence_packet_manifest_errors(packet, manifest, manifest_path))
+        _collect_errors(
+            errors,
+            require_prior_digest_findings_bound,
+            packet,
+            prior.get("digests") or [],
+        )
+        if digest is None:
+            errors.extend(evidence_packet_errors(packet))
+    if digest is not None:
+        expected_slug = _digest_slug(state)
+        if digest.get("slug") != expected_slug:
+            errors.append(
+                f"digest slug must be {expected_slug!r} (runner-generated from week "
+                f"{state['week_start']}); got {digest.get('slug')!r}"
+            )
+    if packet is not None and digest is not None:
+        _collect_errors(
+            errors, digest_to_row, digest, publish=False, evidence_packet=packet
+        )
+    errors = list(dict.fromkeys(errors))
+    if errors:
+        return errors, None
+    proof_errors: list[str] = []
+    expected_row = _collect_errors(
+        proof_errors, digest_to_row, digest, publish=False, evidence_packet=packet
+    )
+    run_proof = _collect_errors(
+        proof_errors,
+        build_run_proof,
+        manifest,
+        manifest_path,
+        digest_document=digest,
+        evidence_packet=packet,
+    )
+    if proof_errors:
+        return list(dict.fromkeys(proof_errors)), None
+    return [], {
+        "evidence_packet": packet,
+        "digest": digest,
+        "expected_row": expected_row,
+        "run_proof": run_proof,
+    }
+
+
+def _write_synthesis_scaffolds(
+    run_dir: Path, state: dict[str, Any], manifest: dict[str, Any], manifest_path: Path
+) -> None:
+    prior = json.loads(Path(state["paths"]["prior_digests"]).read_text(encoding="utf-8"))
+    prior_digests = prior.get("digests") or []
+    index_path = _run_path(state, run_dir, "prior_findings_index", "prior-findings-index.json")
+    if not index_path.exists():
+        _atomic_json(index_path, {"priorDigestFindings": prior_findings_index(prior_digests)})
+    scaffold_path = _run_path(
+        state, run_dir, "evidence_packet_scaffold", "evidence-packet.scaffold.json"
+    )
+    if not scaffold_path.exists():
+        _atomic_json(
+            scaffold_path,
+            evidence_packet_scaffold(
+                manifest,
+                collection_manifest_sha256=_sha256(manifest_path),
+                prior_digests=prior_digests,
+                generated_at=_now(),
+            ),
+        )
+
+
+def _synthesis_handoff(
+    run_dir: Path, state: dict[str, Any], manifest_path: Path
+) -> dict[str, Any]:
+    paths = state["paths"]
+    return {
+        "run_id": state["run_id"],
+        "run_dir": str(run_dir),
+        "manifest": str(manifest_path),
+        "collection_manifest_sha256": _sha256(manifest_path),
+        "youtube_sidecar": paths["youtube_sidecar"],
+        "prior_digests": paths["prior_digests"],
+        "prior_findings_index": str(
+            _run_path(state, run_dir, "prior_findings_index", "prior-findings-index.json")
+        ),
+        "evidence_packet_scaffold": str(
+            _run_path(
+                state, run_dir, "evidence_packet_scaffold", "evidence-packet.scaffold.json"
+            )
+        ),
+        "digest_slug": _digest_slug(state),
+        "week_start": state["week_start"],
+        "write_evidence_packet": paths["evidence_packet"],
+        "write_digest": paths["digest"],
+        "scaffold_digest_command": RESUME_COMMAND + " --scaffold-digest",
+        "check_command": RESUME_COMMAND + " --check",
+        "resume_command": RESUME_COMMAND,
+    }
+
+
+def _synthesis_run(args: argparse.Namespace) -> tuple[Path, dict[str, Any], dict[str, Any], Path]:
+    run_root = args.run_root.resolve()
+    active = _active_run(
+        run_root, week_start=_week_start(), invocation=_invocation(args)
+    )
+    if active is None:
+        raise RuntimeError(
+            f"no active weekly run in {run_root}; start one with: {RESUME_COMMAND}"
+        )
+    run_dir, state = active
+    if state.get("status") == "failed":
+        raise RuntimeError(
+            f"active weekly run {state.get('run_id')!r} has failed; rerun {RESUME_COMMAND} "
+            "to finalize its no-digest receipt"
+        )
+    missing = [
+        stage
+        for stage in ("collection", "youtube", "prior_digests")
+        if stage not in state.get("stages", {})
+    ]
+    if missing:
+        raise RuntimeError(
+            "active weekly run has not reached synthesis; missing stages: "
+            + ", ".join(missing)
+            + f". Run {RESUME_COMMAND} first."
+        )
+    manifest_path = Path(state["paths"]["manifest"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return run_dir, state, manifest, manifest_path
+
+
+def check_weekly(args: argparse.Namespace) -> dict[str, Any]:
+    """Offline dry run: exits ready only when the real run would pass validation.
+
+    Uses no credentials, writes nothing to the database, and leaves run state
+    unchanged.
+    """
+    run_dir, state, manifest, manifest_path = _synthesis_run(args)
+    errors: list[str] = []
+    _collect_errors(errors, require_digest_ready_manifest, manifest, manifest_path)
+    if not errors:
+        errors, _ = _synthesis_errors(state, manifest, manifest_path)
+    return {
+        "status": "invalid" if errors else "ready",
+        "run_id": state["run_id"],
+        "run_dir": str(run_dir),
+        "digest_slug": _digest_slug(state),
+        "error_count": len(errors),
+        "errors": errors,
+    }
+
+
+def scaffold_weekly_digest(args: argparse.Namespace) -> dict[str, Any]:
+    """Write digest.scaffold.json from the completed, manifest-bound evidence packet."""
+    run_dir, state, manifest, manifest_path = _synthesis_run(args)
+    errors: list[str] = []
+    packet = _load_agent_json(
+        Path(state["paths"]["evidence_packet"]), "evidence packet", errors
+    )
+    if packet is not None:
+        errors.extend(evidence_packet_errors(packet))
+        errors.extend(evidence_packet_manifest_errors(packet, manifest, manifest_path))
+    if errors:
+        return {
+            "status": "invalid",
+            "run_id": state["run_id"],
+            "error_count": len(errors),
+            "errors": list(dict.fromkeys(errors)),
+        }
+    scaffold_path = _run_path(state, run_dir, "digest_scaffold", "digest.scaffold.json")
+    if scaffold_path.exists():
+        raise RuntimeError(
+            f"digest scaffold already exists: {scaffold_path}. It may hold edits; "
+            "move it aside to regenerate."
+        )
+    _atomic_json(
+        scaffold_path,
+        digest_scaffold(packet, slug=_digest_slug(state), date=state["week_start"]),
+    )
+    return {
+        "status": "scaffolded",
+        "run_id": state["run_id"],
+        "digest_scaffold": str(scaffold_path),
+        "write_digest": state["paths"]["digest"],
+        "check_command": RESUME_COMMAND + " --check",
+    }
+
+
 def run_weekly(args: argparse.Namespace) -> dict[str, Any]:
     run_root = args.run_root.resolve()
     week_start = _week_start()
@@ -481,45 +721,18 @@ def run_weekly(args: argparse.Namespace) -> dict[str, Any]:
         evidence_path = Path(paths["evidence_packet"])
         digest_path = Path(paths["digest"])
         if not evidence_path.is_file() or not digest_path.is_file():
+            _write_synthesis_scaffolds(run_dir, state, manifest, manifest_path)
             state.update({"status": "awaiting_synthesis", "stage": "awaiting_synthesis", "updated_at": _now()})
             _atomic_json(run_dir / "run-state.json", state)
+            _secure_tree(run_dir)
             return {
                 "status": "awaiting_synthesis",
-                "run_id": state["run_id"],
-                "run_dir": str(run_dir),
-                "manifest": str(manifest_path),
-                "collection_manifest_sha256": _sha256(manifest_path),
-                "youtube_sidecar": state["paths"]["youtube_sidecar"],
-                "prior_digests": paths["prior_digests"],
-                "write_evidence_packet": str(evidence_path),
-                "write_digest": str(digest_path),
-                "resume_command": "UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly",
+                **_synthesis_handoff(run_dir, state, manifest_path),
             }
 
-        evidence_packet = json.loads(evidence_path.read_text(encoding="utf-8"))
-        digest_document = json.loads(digest_path.read_text(encoding="utf-8"))
         try:
+            # Manifest and YouTube evidence are runner-owned: a broken invariant is terminal.
             require_digest_ready_manifest(manifest, manifest_path)
-            require_evidence_packet_bound_to_manifest(
-                evidence_packet, manifest, manifest_path
-            )
-            prior_snapshot = json.loads(
-                Path(paths["prior_digests"]).read_text(encoding="utf-8")
-            )
-            require_prior_digest_findings_bound(
-                evidence_packet, prior_snapshot.get("digests") or []
-            )
-            expected_row = digest_to_row(
-                digest_document,
-                publish=False,
-                evidence_packet=evidence_packet,
-            )
-            run_proof = build_run_proof(
-                manifest,
-                manifest_path,
-                digest_document=digest_document,
-                evidence_packet=evidence_packet,
-            )
         except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
             _fail(
                 run_dir,
@@ -531,6 +744,34 @@ def run_weekly(args: argparse.Namespace) -> dict[str, Any]:
             return json.loads(
                 (run_dir / "run-receipt.json").read_text(encoding="utf-8")
             )
+        # Packet and digest are agent-authored: errors stay resumable in the same run.
+        errors, validated = _synthesis_errors(state, manifest, manifest_path)
+        if validated is None:
+            state.update(
+                {
+                    "status": "awaiting_synthesis",
+                    "stage": "awaiting_synthesis",
+                    "updated_at": _now(),
+                    "last_error": {
+                        "at": _now(),
+                        "stage": "validation",
+                        "errors": errors[:100],
+                        "resumable": True,
+                    },
+                }
+            )
+            _atomic_json(run_dir / "run-state.json", state)
+            _secure_tree(run_dir)
+            return {
+                "status": "validation_failed",
+                "error_count": len(errors),
+                "errors": errors,
+                **_synthesis_handoff(run_dir, state, manifest_path),
+            }
+        evidence_packet = validated["evidence_packet"]
+        digest_document = validated["digest"]
+        expected_row = validated["expected_row"]
+        run_proof = validated["run_proof"]
         _save_state(run_dir, state, "validation")
 
         if "draft_write" not in state["stages"]:
@@ -617,6 +858,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--youtube-batch-deadline-ms", type=int, default=3600000)
     parser.add_argument("--max-videos", type=int, default=25)
     parser.add_argument("--fail-reason", default="")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--check",
+        action="store_true",
+        help="validate the active run's packet and digest offline; no credentials, DB writes, or state changes",
+    )
+    mode.add_argument(
+        "--scaffold-digest",
+        action="store_true",
+        help="write digest.scaffold.json from the completed evidence packet",
+    )
     return parser
 
 
@@ -632,12 +884,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     if any(value < 1 for value in numeric):
         raise SystemExit("all day, worker, timeout, deadline, and cap values must be positive")
+    if (args.check or args.scaffold_digest) and args.fail_reason:
+        raise SystemExit("--fail-reason cannot be combined with --check or --scaffold-digest")
     try:
-        result = run_weekly(args)
+        if args.check:
+            result = check_weekly(args)
+        elif args.scaffold_digest:
+            result = scaffold_weekly_digest(args)
+        else:
+            result = run_weekly(args)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         raise SystemExit(str(exc)) from exc
     print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
-    return 2 if result.get("outcome") == "no-digest" else 0
+    if result.get("outcome") == "no-digest":
+        return 2
+    return 1 if result.get("status") in {"invalid", "validation_failed"} else 0
 
 
 if __name__ == "__main__":

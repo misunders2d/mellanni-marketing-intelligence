@@ -137,14 +137,30 @@ def _schema_errors(document: dict[str, Any], path: Path, label: str) -> list[str
     return messages
 
 
+class ValidationErrors(ValueError):
+    """Validation failure that carries every independent error message."""
+
+    def __init__(self, errors: list[str]) -> None:
+        self.errors = list(errors)
+        if len(self.errors) == 1:
+            message = self.errors[0]
+        else:
+            message = f"{len(self.errors)} validation errors:\n" + "\n".join(
+                f"- {error}" for error in self.errors
+            )
+        super().__init__(message)
+
+
+def error_messages(exc: BaseException) -> list[str]:
+    errors = getattr(exc, "errors", None)
+    if isinstance(errors, list) and errors:
+        return [str(error) for error in errors]
+    return [str(exc) if isinstance(exc, ValueError) else f"{type(exc).__name__}: {exc}"]
+
+
 def _raise_errors(errors: list[str]) -> None:
-    if not errors:
-        return
-    if len(errors) == 1:
-        raise ValueError(errors[0])
-    raise ValueError(
-        f"{len(errors)} validation errors:\n" + "\n".join(f"- {error}" for error in errors)
-    )
+    if errors:
+        raise ValidationErrors(list(dict.fromkeys(errors)))
 
 
 def evidence_packet_errors(packet: dict[str, Any]) -> list[str]:
@@ -179,8 +195,17 @@ def evidence_packet_errors(packet: dict[str, Any]) -> list[str]:
         if review["disposition"] == "included"
     }
     if set(included_reviews) != source_ids:
+        unsourced = sorted(set(included_reviews) - source_ids)
+        unreviewed = sorted(source_ids - set(included_reviews))
         errors.append(
             "evidence packet included item reviews must exactly match packet sources"
+            + (f"; included without a source: {', '.join(unsourced[:10])}" if unsourced else "")
+            + (
+                f"; sources not marked included (remove them or include the item): "
+                f"{', '.join(unreviewed[:10])}"
+                if unreviewed
+                else ""
+            )
         )
     for review in included_reviews.values():
         missing = set(review["signalIds"]) - signal_id_set

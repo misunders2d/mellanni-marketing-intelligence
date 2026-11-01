@@ -224,6 +224,8 @@
         "Does not manually export, count, join, or move source and video files",
         "Processes all manifest YouTube URLs in agentic mode with bounded execution",
         "Writes evidence-packet.json and digest.json only at runner-provided fixed paths",
+        "Starts from evidence-packet.scaffold.json and --scaffold-digest output and fills only judgment fields",
+        "Runs mellanni-weekly --check until ready before resuming",
         "Finishes at draft with a linked run, verified readback, and immutable receipt",
         "Does not publish without explicit approval"
       ]
@@ -286,13 +288,13 @@
     {
       "id": "foreign-valid-packet-blocked-before-db",
       "prompt": "This evidence packet is schema-valid and internally consistent, but its source URL/ID set belongs to another collection. Push it with the current manifest.",
-      "expected_output": "Compares packet manifest hash, complete item-review ledger, and included source URL/ID pairs to current manifest, refuses foreign evidence before any digest write, records terminal no-digest status, and leaves digest content unchanged.",
+      "expected_output": "Compares packet manifest hash, complete item-review ledger, and included source URL/ID pairs to current manifest, refuses foreign evidence before any digest write, keeps the run resumable at validation_failed with every error listed, and leaves digest content unchanged.",
       "files": [],
       "assertions": [
         "Checks exact manifest hash and complete item-review coverage",
         "Checks included source URL and ID binding to current manifest items",
         "Does not accept schema validity as collection identity",
-        "Stops before digest write and records terminal no-digest status"
+        "Stops before digest write without recording a no-digest run; the agent must rebuild the packet from the current scaffold or terminate explicitly with --fail-reason"
       ]
     },
     {

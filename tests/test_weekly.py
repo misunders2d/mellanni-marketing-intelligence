@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from argparse import Namespace
 from contextlib import ExitStack
+from copy import deepcopy
+from datetime import UTC, datetime
 import hashlib
 import json
 import os
@@ -12,7 +14,13 @@ import unittest
 from unittest.mock import patch
 
 from mellanni_marketing_intelligence.supabase_content import digest_to_row
-from mellanni_marketing_intelligence.weekly import build_parser, run_weekly
+from mellanni_marketing_intelligence import weekly as weekly_module
+from mellanni_marketing_intelligence.weekly import (
+    build_parser,
+    check_weekly,
+    run_weekly,
+    scaffold_weekly_digest,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -106,6 +114,7 @@ def write_synthesis(result: dict) -> tuple[dict, dict]:
             encoding="utf-8"
         )
     )
+    digest["slug"] = result["digest_slug"]
     Path(result["write_evidence_packet"]).write_text(
         json.dumps(packet), encoding="utf-8"
     )
@@ -418,32 +427,227 @@ class WeeklyRunnerTests(unittest.TestCase):
             mocks.push.assert_called_once()
             mocks.record.assert_called_once()
 
-    def test_invalid_packet_records_terminal_no_digest_before_draft_write(self) -> None:
+    def test_invalid_synthesis_is_resumable_in_same_run(self) -> None:
+        with RunnerMocks() as mocks:
+            mocks.push.return_value = {
+                "id": "digest-id",
+                "slug": "unused",
+                "status": "draft",
+            }
+            with tempfile.TemporaryDirectory() as temp:
+                run_root = Path(temp) / "weekly"
+                first = run_weekly(args(run_root))
+                digest, packet = write_synthesis(first)
+                broken = deepcopy(digest)
+                broken["signals"][0]["externalSignal"] = "Agent typo in copied text."
+                broken["actions"][0]["mellanniEvidence"]["privateQueryRefs"] = ["typo"]
+                Path(first["write_digest"]).write_text(
+                    json.dumps(broken), encoding="utf-8"
+                )
+
+                failed = run_weekly(args(run_root))
+                self.assertEqual(failed["status"], "validation_failed")
+                self.assertEqual(failed["run_id"], first["run_id"])
+                self.assertEqual(failed["error_count"], 2)
+                self.assertFalse((Path(first["run_dir"]) / "run-receipt.json").exists())
+                state = json.loads(
+                    (Path(first["run_dir"]) / "run-state.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(state["status"], "awaiting_synthesis")
+                self.assertTrue(state["last_error"]["resumable"])
+                mocks.record.assert_not_called()
+                mocks.push.assert_not_called()
+
+                Path(first["write_digest"]).write_text(
+                    json.dumps(digest), encoding="utf-8"
+                )
+                mocks.digests.side_effect = [[stored_draft(digest, packet)]]
+                receipt = run_weekly(args(run_root))
+                self.assertEqual(receipt["outcome"], "draft")
+                self.assertEqual(receipt["run_id"], first["run_id"])
+            self.assertEqual(mocks.fetch.call_count, 1)
+            self.assertEqual(mocks.youtube.call_count, 1)
+            mocks.record.assert_called_once()
+            self.assertEqual(mocks.record.call_args.kwargs["outcome"], "digest")
+
+    def test_malformed_agent_json_is_resumable(self) -> None:
+        with RunnerMocks() as mocks:
+            with tempfile.TemporaryDirectory() as temp:
+                run_root = Path(temp) / "weekly"
+                first = run_weekly(args(run_root))
+                write_synthesis(first)
+                Path(first["write_digest"]).write_text("{not json", encoding="utf-8")
+                failed = run_weekly(args(run_root))
+                self.assertEqual(failed["status"], "validation_failed")
+                self.assertIn("digest is not valid JSON", failed["errors"][0])
+            mocks.record.assert_not_called()
+
+    def test_digest_slug_is_runner_generated_from_pacific_week(self) -> None:
+        with RunnerMocks(), patch(
+            "mellanni_marketing_intelligence.weekly._week_start",
+            return_value="2026-09-07",
+        ):
+            with tempfile.TemporaryDirectory() as temp:
+                run_root = Path(temp) / "weekly"
+                first = run_weekly(args(run_root))
+                self.assertEqual(first["digest_slug"], "2026-09-07-weekly-marketing-digest")
+                digest, _ = write_synthesis(first)
+                digest["slug"] = "2026-08-31-weekly-marketing-digest"
+                Path(first["write_digest"]).write_text(json.dumps(digest), encoding="utf-8")
+                failed = run_weekly(args(run_root))
+                self.assertEqual(failed["status"], "validation_failed")
+                self.assertIn("digest slug must be", failed["errors"][0])
+
+    def test_week_start_uses_pacific_time(self) -> None:
+        sunday_evening_pacific = datetime(2026, 9, 14, 3, 0, tzinfo=UTC)
+        with patch("mellanni_marketing_intelligence.weekly.datetime") as clock:
+            clock.now.side_effect = lambda tz=None: sunday_evening_pacific.astimezone(tz)
+            self.assertEqual(weekly_module._week_start(), "2026-09-07")
+
+    def test_check_reports_readiness_without_state_or_db_changes(self) -> None:
+        with RunnerMocks() as mocks:
+            with tempfile.TemporaryDirectory() as temp:
+                run_root = Path(temp) / "weekly"
+                first = run_weekly(args(run_root))
+                state_path = Path(first["run_dir"]) / "run-state.json"
+                credential_calls = mocks.credentials.call_count
+
+                missing = check_weekly(args(run_root, "--check"))
+                self.assertEqual(missing["status"], "invalid")
+                self.assertTrue(any("is missing" in error for error in missing["errors"]))
+
+                digest, packet = write_synthesis(first)
+                broken = deepcopy(packet)
+                broken["collectionManifestSha256"] = "0" * 64
+                Path(first["write_evidence_packet"]).write_text(
+                    json.dumps(broken), encoding="utf-8"
+                )
+                before = state_path.read_bytes()
+                invalid = check_weekly(args(run_root, "--check"))
+                self.assertEqual(invalid["status"], "invalid")
+                self.assertTrue(any("manifest hash mismatch" in error for error in invalid["errors"]))
+                self.assertEqual(state_path.read_bytes(), before)
+
+                Path(first["write_evidence_packet"]).write_text(
+                    json.dumps(packet), encoding="utf-8"
+                )
+                ready = check_weekly(args(run_root, "--check"))
+                self.assertEqual(ready["status"], "ready", ready["errors"])
+                self.assertEqual(state_path.read_bytes(), before)
+                self.assertEqual(mocks.credentials.call_count, credential_calls)
+            mocks.push.assert_not_called()
+            mocks.record.assert_not_called()
+
+    def test_scaffolds_leave_only_reasoning_fields_for_agent(self) -> None:
+        example_packet = json.loads(
+            (PROJECT_ROOT / "examples" / "evidence-packet.example.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        example_digest = json.loads(
+            (PROJECT_ROOT / "examples" / "digest.example.json").read_text(
+                encoding="utf-8"
+            )
+        )
         with RunnerMocks() as mocks:
             with tempfile.TemporaryDirectory() as temp:
                 run_root = Path(temp) / "weekly"
                 first = run_weekly(args(run_root))
                 packet = json.loads(
-                    (PROJECT_ROOT / "examples" / "evidence-packet.example.json").read_text(
-                        encoding="utf-8"
-                    )
+                    Path(first["evidence_packet_scaffold"]).read_text(encoding="utf-8")
                 )
-                packet["collectionManifestSha256"] = hashlib.sha256(
-                    Path(first["manifest"]).read_bytes()
-                ).hexdigest()
-                packet["sources"][0]["id"] = "foreign-source"
+                self.assertEqual(
+                    packet["collectionManifestSha256"], first["collection_manifest_sha256"]
+                )
+                self.assertEqual(
+                    [review["itemId"] for review in packet["itemReviews"]],
+                    [source["item_id"] for source in packet_sources()],
+                )
+                # Agent judgment: dispositions, notes, signals, memory, queries, skills.
+                for review, example in zip(packet["itemReviews"], example_packet["itemReviews"]):
+                    review.update(
+                        disposition="included",
+                        signalIds=example["signalIds"],
+                        reason=example["reason"],
+                    )
+                for source in packet["sources"]:
+                    source["note"] = "Direct evidence URL."
+                for field in (
+                    "signals",
+                    "memoryBatch",
+                    "memoryRecords",
+                    "memoryReconciliations",
+                    "mellanniQueries",
+                    "skillInventory",
+                ):
+                    packet[field] = example_packet[field]
                 Path(first["write_evidence_packet"]).write_text(
                     json.dumps(packet), encoding="utf-8"
                 )
-                Path(first["write_digest"]).write_bytes(
-                    (PROJECT_ROOT / "examples" / "digest.example.json").read_bytes()
+
+                scaffolded = scaffold_weekly_digest(args(run_root, "--scaffold-digest"))
+                self.assertEqual(scaffolded["status"], "scaffolded")
+                digest = json.loads(
+                    Path(scaffolded["digest_scaffold"]).read_text(encoding="utf-8")
                 )
+                self.assertEqual(digest["slug"], first["digest_slug"])
+                self.assertEqual(digest["sources"], packet["sources"])
+                unfinished = check_weekly(args(run_root, "--check"))
+                self.assertEqual(unfinished["status"], "invalid")
+
+                # Agent judgment only: copy reasoning fields from the example.
+                digest["title"] = example_digest["title"]
+                digest["summary"] = example_digest["summary"]
+                digest["topics"] = example_digest["topics"]
+                reasoning = {
+                    "actions": (
+                        "title", "guidance", "timebox", "kpi", "successCondition",
+                        "stopCondition", "confidence", "limitations", "novelty",
+                        "skillReferences",
+                    ),
+                    "signals": (
+                        "title", "whyItMatters", "nextValidation", "novelty",
+                        "skillReferences",
+                    ),
+                }
+                for kind, fields in reasoning.items():
+                    for finding, example in zip(digest[kind], example_digest[kind]):
+                        for field in fields:
+                            finding[field] = example[field]
+                for action, example in zip(digest["actions"], example_digest["actions"]):
+                    for field in ("entityScope", "conclusion"):
+                        action["mellanniEvidence"][field] = example["mellanniEvidence"][field]
+                    for field in (
+                        "baseline", "guidance", "kpi", "successCondition", "stopCondition",
+                    ):
+                        action["privateDecision"][field] = example["privateDecision"][field]
+                Path(first["write_digest"]).write_text(json.dumps(digest), encoding="utf-8")
+
+                ready = check_weekly(args(run_root, "--check"))
+                self.assertEqual(ready["status"], "ready", ready["errors"])
+                mocks.push.return_value = {"id": "digest-id", "status": "draft"}
+                mocks.digests.side_effect = [[stored_draft(digest, packet)]]
                 receipt = run_weekly(args(run_root))
-                self.assertEqual(receipt["outcome"], "no-digest")
-                self.assertIn("references missing sources", receipt["reason"])
-            mocks.push.assert_not_called()
-            mocks.record.assert_called_once()
-            self.assertEqual(mocks.record.call_args.kwargs["outcome"], "no-digest")
+                self.assertEqual(receipt["outcome"], "draft")
+
+    def test_packet_scaffold_pre_excludes_previously_published_items(self) -> None:
+        source = packet_sources()[0]
+        with RunnerMocks() as mocks:
+            mocks.digests.return_value = [
+                {
+                    "slug": "2026-08-31-weekly-marketing-digest",
+                    "body": {"actions": [], "signals": [], "sources": [{"url": source["url"]}]},
+                }
+            ]
+            with tempfile.TemporaryDirectory() as temp:
+                first = run_weekly(args(Path(temp) / "weekly"))
+                packet = json.loads(
+                    Path(first["evidence_packet_scaffold"]).read_text(encoding="utf-8")
+                )
+        reviews = {review["itemId"]: review for review in packet["itemReviews"]}
+        self.assertEqual(reviews[source["item_id"]]["disposition"], "excluded")
+        self.assertIn("2026-08-31-weekly-marketing-digest", reviews[source["item_id"]]["reason"])
+        self.assertIsNone(reviews[packet_sources()[1]["item_id"]]["disposition"])
 
     def test_failed_manifest_is_rechecked_after_crash_before_fail_transition(self) -> None:
         def failed_collection(**kwargs) -> dict:
