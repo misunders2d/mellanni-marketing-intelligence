@@ -14,6 +14,54 @@ A fresh agent with no prior context should be able to run the weekly marketing r
 - **Code:** no security blockers. Main gap is operability: the agent still performs mechanical work by hand, and one class of agent mistake ends a run terminally and expensively.
 - **Frontend:** approve with follow-ups. One P1 content-truth bug, plus P1 density and navigation problems on the digest page.
 
+## Resolution status (2026-11-01, branch `fix/review-handoff-findings`)
+
+Every item below is resolved except AR-9. The original findings stay unchanged further down for reference.
+
+| ID | Status | Resolution |
+|---|---|---|
+| AR-1 | Fixed | Packet/digest validation errors (malformed JSON and wrong slug too) return `status: validation_failed`, keep the same `run_id` at `awaiting_synthesis`, and record no DB row. Only a broken runner-owned invariant or `--fail-reason` is terminal. |
+| AR-2 | Fixed | `mellanni-weekly --check` runs the full readiness chain offline, with no credentials, DB writes, or state change. |
+| AR-3 | Fixed | All schema errors (capped at 50, array dumps shortened) plus all cross-field errors per pass. |
+| AR-4 | Fixed | Privacy flags are derived; agent `privacy` input is optional and ignored. Restricted-content checks stay hard failures. |
+| AR-5 | Fixed | `validate_digest` enforces at most 10 Actions plus Signals combined; the schema caps Signals at 10. |
+| AR-6 | Fixed | Runner writes `evidence-packet.scaffold.json` and the prior-findings index at `awaiting_synthesis`. `--scaffold-digest` builds `digest.scaffold.json` from the finished packet with every mirrored field copied. |
+| AR-7 | Fixed, different ledger | No new table: `runs.manifest` holds compact proof only, so the scaffold pre-excludes items whose URL a published digest already cited. Locale/query variants are deduped. Undated html-index items are rejected unless the source is `evergreen`. `evergreen` is a config-level flag only; no DB column was added. |
+| AR-8 | Fixed | Collector prefers `<article>`/`<main>` text, keeps paragraph breaks, drops nav/footer/aside/form chrome, and reads page publish dates from meta, `<time>`, and JSON-LD. |
+| AR-9 | Open | Needs Sergey's decision on cost, provider, and episode cap. |
+| AR-10 | Fixed | Runner generates the slug from the Pacific `week_start`. `push-digest` refuses a currently published slug unless `--replace-published` is passed. |
+| CL-1 | Fixed | Proxy adds `?next=`; login form and callback pass it through `safeNextPath`. |
+| CL-2 | Fixed | `week_start` uses `America/Los_Angeles`. |
+| CL-3 | Fixed | Reads throw `DigestLoadError`; `app/error.tsx` renders a real error state. |
+| CL-4 | Fixed | Admin console shows proof status, disables Publish without a verified proof for the current content hash, asks for inline confirmation, links a preview, and maps errors to readable text. Migration `20261101120000` makes the guard trigger stamp `published_at` from the database clock and ignore client values. |
+| CL-5 | Fixed | JSON mode renders the member-visible projection through `public_digest_body`. |
+| CL-6 | Fixed | Tests use dates relative to now. |
+| CL-7 | Fixed | Standalone output defaults to `/tmp/mellanni-marketing-journal` (`MELLANNI_JOURNAL_ROOT` overrides); duplicate pip block removed. |
+| CL-8 | Approved | Local ignored `journal/` and `website/out/` deleted with Sergey's approval. |
+| CL-9 | Documented | Decision: keep admin `DELETE` and document it in `references/operations.md` as an admin capability. Normal removal stays return-to-draft. |
+| CL-10 | Fixed | `list_digests` filters private bodies by the returned digest IDs. |
+| CL-11 | Fixed | `sampleDigest` removed. |
+| CL-12 | Fixed | Example uses contribution margin, higher is better, with consistent success/stop thresholds. |
+| FE-1 | Fixed | "Mellanni evidence" label; new sample-notice copy. |
+| FE-2 | Fixed | Numbered overview (kind, title, KPI/timebox/confidence or next validation, contradiction flag) with `#id` links. Scope, limits, and playbooks collapse into `<details>`. A comparable 10-item fixture now measures 10,427px desktop and 14,286px mobile with details closed; the fixture differs slightly from the review's, so treat the delta as indicative. |
+| FE-3 | Fixed | Evidence links go straight to the external source. Source notes list "Cited in Action N / Signal N" back-links; every finding has "Back to overview". |
+| FE-4 | Fixed | Skill URIs hidden; playbooks sit inside `<details>`. Memory notes render only for `contradicts`/`extends`. |
+| FE-5 | Fixed | Finding-level hits with deep links; query persists in `?q=`. |
+| FE-6 | Fixed | Home leads with the latest digest (contradictions, items, links), then earlier digests. Brochure sections removed; metadata copy updated. |
+| FE-7 | Fixed | Digest title capped at `clamp(2.25rem, 4.5vw, 3rem)`. |
+| FE-8 | Fixed | Nav only for members, Admin only for admins, `aria-current="page"`, "Calendar" renamed "Archive". |
+| FE-9 | Fixed | Admin-only `/admin/preview/SLUG/`, noindex, with a draft/published banner. |
+| FE-10 | Fixed | Source Serif 4 and Source Sans 3 self-hosted through `next/font`. |
+| FE-11 | Fixed | Contradiction colors tokenized; link underline token `#767d71` (3.67:1 on canvas). |
+| FE-12 | Fixed | Month-grouped list replaces the calendar grid. |
+
+**Observations found while fixing (not changed):**
+
+- Live Supabase source `sell-on-amazon` still uses `include_patterns: ["/blog/"]`. The collector now drops its locale and navigation noise. Narrowing it (for example to `/blog/announcements/`) is a live source mutation and needs approval.
+- RLS lets admins `INSERT`/`UPDATE` `runs`, so an admin could write a run row that satisfies the publication proof gate. That is within the admin trust boundary today. Tighten it if admins should not be able to self-attest proof.
+
+**Verification for this branch:** 129 Python tests and 19 Node tests pass. Website typecheck, lint, and build pass. Fixture-rendered Playwright checks at 1440×900 and 390×844 covered home, digest (10-item stress and example), search, archive, login, admin preview, admin, and 404. No horizontal overflow; console errors only on the expected 404. Authenticated reader/admin behavior on production needs a Google-login check by Sergey.
+
 ## Responsibility split
 
 **Already deterministic and well built — keep:** source snapshot, hash-bound collection, resumable YouTube batch and sidecar, manifest/packet/prior-findings binding, draft write, content-hash readback, run proof, immutable receipt, and the database publication gate (trigger plus `publish_digest_with_verified_run`).
