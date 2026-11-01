@@ -19,7 +19,7 @@ Read [references/editorial-contract.md](references/editorial-contract.md) before
 - Use `mellanni_marketing_intelligence.supabase_content` for DB operations. Avoid raw SQL/REST mutations.
 - Keep collection deterministic. Agent work starts after manifest exists and is limited to evidence selection, exact MCP evidence capture, and synthesis from the validated packet.
 - Collection fails closed on fatal source acquisition/parsing errors. Recoverable item failures and truncation remain warnings. Never replace a fatally failed source with one manually selected item.
-- Run the repo-owned `mellanni-weekly` command for the current 13-source workflow. It owns snapshot, hash-bound collection, bounded YouTube processing, validation, draft write, exact readback, run link, and immutable receipt.
+- Run the repo-owned `mellanni-weekly` command for the current 13-source workflow. It owns snapshot, hash-bound collection, bounded YouTube processing, packet/digest scaffolds, slug, validation, draft write, exact readback, run link, and immutable receipt. Fill only judgment fields in its scaffolds, and run `mellanni-weekly --check` until `ready` before resuming; packet/digest validation errors stay resumable in the same run.
 - Every collected item needs a hash-verified local artifact. Every collected video also needs hash-verified agentic Markdown and JSON artifacts bound to the immutable manifest; one missing or changed artifact stops the digest.
 - Review every collected item once in `itemReviews`: included items name their Signal IDs; excluded items give a concrete reason. Keep podcast and YouTube evidence episode-specific; review every episode before consolidating related findings for the digest.
 - Default to draft. Publish only on explicit user instruction.

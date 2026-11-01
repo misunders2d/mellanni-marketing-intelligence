@@ -23,7 +23,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run mellanni-weekly
 ```
 
 The runner creates an external `/tmp/mellanni-marketing-weekly/<run>/` workspace,
-snapshots live sources, writes a hash-bound manifest for collected content, processes all YouTube episodes, and returns fixed paths for the agent-authored evidence packet and digest. Evidence packet must record one included/excluded review per manifest item. After agent writes those two files, run same command again; it validates, writes and content-hash-verifies a draft, links exact content proof, and writes one immutable receipt.
+snapshots live sources, writes a hash-bound manifest for collected content, processes all YouTube episodes, and returns fixed paths for the agent-authored evidence packet and digest. Evidence packet must record one included/excluded review per manifest item. It also writes an evidence-packet scaffold and, via `--scaffold-digest`, a digest scaffold so the agent fills only judgment fields. `mellanni-weekly --check` is an offline dry run of the full validation chain. After agent writes those two files, run same command again; it validates, writes and content-hash-verifies a draft, links exact content proof, and writes one immutable receipt. Packet/digest validation errors stay resumable in the same run.
 See the operator skill's [canonical digest runbook](skills/mellanni-marketing-operator/references/operations.md#digest-run).
 
 Fetch-only debugging for Plane project `MKT-1`:

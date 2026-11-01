@@ -18,6 +18,7 @@ from .collector import is_youtube_url
 from .editorial import (
     private_digest_body,
     public_digest_body,
+    ValidationErrors,
     validate_digest,
     validate_evidence_packet,
 )
@@ -664,16 +665,16 @@ def require_digest_ready_manifest(
             raise ValueError("refusing digest write: YouTube result coverage does not match manifest")
 
 
-def require_evidence_packet_bound_to_manifest(
+def evidence_packet_manifest_errors(
     evidence_packet: dict[str, Any],
     manifest: dict[str, Any],
     manifest_path: Path,
-) -> None:
-    validate_evidence_packet(evidence_packet)
+) -> list[str]:
+    errors: list[str] = []
     manifest_path = manifest_path.resolve()
     manifest_hash = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     if evidence_packet.get("collectionManifestSha256") != manifest_hash:
-        raise ValueError(
+        errors.append(
             "refusing digest write: evidence packet collection manifest hash mismatch"
         )
 
@@ -684,28 +685,42 @@ def require_evidence_packet_bound_to_manifest(
         isinstance(value, list)
         for value in (packet_sources, item_reviews, manifest_items)
     ):
-        raise ValueError(
+        errors.append(
             "refusing digest write: packet sources, item reviews, and manifest items are required"
         )
+        return errors
 
     manifest_by_id = {
         str(item.get("item_id", "")): str(item.get("url", ""))
         for item in manifest_items
         if isinstance(item, dict)
     }
-    review_ids = {
+    review_ids = [
         str(review.get("itemId", ""))
         for review in item_reviews
         if isinstance(review, dict)
-    }
+    ]
     if (
         len(manifest_by_id) != len(manifest_items)
         or len(review_ids) != len(item_reviews)
-        or review_ids != set(manifest_by_id)
+        or len(set(review_ids)) != len(review_ids)
+        or set(review_ids) != set(manifest_by_id)
     ):
-        raise ValueError(
+        unreviewed = sorted(set(manifest_by_id) - set(review_ids))
+        unknown = sorted(set(review_ids) - set(manifest_by_id))
+        errors.append(
             "refusing digest write: item reviews must cover every collection manifest item exactly once"
+            + (f"; unreviewed: {', '.join(unreviewed[:10])}" if unreviewed else "")
+            + (f"; not in manifest: {', '.join(unknown[:10])}" if unknown else "")
         )
+    for review in item_reviews:
+        if not isinstance(review, dict) or "url" not in review:
+            continue
+        expected_url = manifest_by_id.get(str(review.get("itemId", "")))
+        if expected_url is not None and review["url"] != expected_url:
+            errors.append(
+                f"refusing digest write: item review {review.get('itemId')!r} url differs from manifest"
+            )
 
     packet_set = {
         (str(source.get("id", "")), str(source.get("url", "")))
@@ -714,9 +729,21 @@ def require_evidence_packet_bound_to_manifest(
     }
     manifest_set = set(manifest_by_id.items())
     if len(packet_set) != len(packet_sources) or not packet_set.issubset(manifest_set):
-        raise ValueError(
+        errors.append(
             "refusing digest write: evidence packet source URL/ID set does not match collection manifest items"
         )
+    return errors
+
+
+def require_evidence_packet_bound_to_manifest(
+    evidence_packet: dict[str, Any],
+    manifest: dict[str, Any],
+    manifest_path: Path,
+) -> None:
+    validate_evidence_packet(evidence_packet)
+    errors = evidence_packet_manifest_errors(evidence_packet, manifest, manifest_path)
+    if errors:
+        raise ValidationErrors(errors)
 
 
 def require_prior_digest_findings_bound(

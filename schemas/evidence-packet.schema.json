@@ -102,7 +102,19 @@
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/identifier" }
         },
-        "reason": { "$ref": "#/$defs/nonEmpty" }
+        "reason": { "$ref": "#/$defs/nonEmpty" },
+        "title": {
+          "type": "string",
+          "description": "Optional runner-copied item title for reviewer context."
+        },
+        "url": {
+          "type": "string",
+          "description": "Optional runner-copied item URL; must equal the manifest URL when present."
+        },
+        "source": {
+          "type": "string",
+          "description": "Optional runner-copied source name for reviewer context."
+        }
       },
       "allOf": [
         {
