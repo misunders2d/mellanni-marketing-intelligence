@@ -845,6 +845,33 @@ class SupabaseContentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "too long"):
             digest_to_row(digest, publish=False, evidence_packet=packet)
 
+    def test_digest_validation_reports_every_independent_error(self) -> None:
+        digest, packet = example_documents()
+        digest["actions"][0]["mellanniEvidence"]["privateQueryRefs"] = ["missing-query"]
+        digest["signals"][0]["externalSignal"] = "Rewritten signal text."
+        digest["sources"][0]["name"] = "Renamed source"
+
+        with self.assertRaises(ValueError) as raised:
+            digest_to_row(digest, publish=False, evidence_packet=packet)
+        message = str(raised.exception)
+        self.assertIn("validation errors", message)
+        self.assertIn("missing Mellanni query", message)
+        self.assertIn("changes packet external signal text", message)
+        self.assertIn("name differs from packet", message)
+
+    def test_schema_validation_reports_every_schema_error(self) -> None:
+        digest, packet = example_documents()
+        del digest["title"]
+        del digest["summary"]
+        del packet["memoryBatch"]
+
+        with self.assertRaises(ValueError) as raised:
+            digest_to_row(digest, publish=False, evidence_packet=packet)
+        message = str(raised.exception)
+        self.assertIn("'title' is a required property", message)
+        self.assertIn("'summary' is a required property", message)
+        self.assertIn("'memoryBatch' is a required property", message)
+
     def test_action_requires_matching_private_mellanni_query(self) -> None:
         digest, packet = example_documents()
         digest["actions"][0]["mellanniEvidence"]["privateQueryRefs"] = ["missing-query"]
