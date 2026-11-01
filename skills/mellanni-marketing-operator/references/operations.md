@@ -153,6 +153,10 @@ UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supa
 
 CLI requires a successful digest run linked to the exact current public/private content hash. Publication runs through the atomic `publish_digest_with_verified_run` database function; a proof for older content cannot authorize a changed draft. Missing, obsolete, content-mismatched, or unverified proof blocks. Raw local artifacts need not exist. If they still exist, `--manifest PATH` is an optional extra collection-proof match, never primary publication authority. Verify published readback and authenticated reader URL. Returning digest to draft remains reversible and needs no manifest.
 
+The admin console publishes through the same database gate: its Publish button stays disabled until a verified run proof matches the current content hash, and the database stamps `published_at` from its own clock. Admins can open `/admin/preview/SLUG/` to read a draft exactly as members will see it.
+
+Hard deletion is an admin capability, not a CLI operation. RLS grants active admins `DELETE` on `digests` (the private body cascades), so an admin session or the admin REST surface can remove a row permanently. Normal digest removal is still return-to-draft; delete only with explicit user approval for that exact slug.
+
 ## Membership and offboarding
 
 List active members, or include inactive rows:
