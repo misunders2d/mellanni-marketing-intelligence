@@ -191,6 +191,8 @@ def source_rows_to_config(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "max_items": int(row.get("max_items", 5)),
             "max_feed_candidates": int(row.get("max_feed_candidates", 8)),
         }
+        if row.get("evergreen") is True:
+            source["evergreen"] = True
         sources.append(source)
     return {"sources": sources}
 

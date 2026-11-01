@@ -16,6 +16,8 @@ class Source:
     feed_urls: tuple[str, ...] = ()
     max_items: int = 5
     max_feed_candidates: int = 8
+    # Keep undated pages (reference/evergreen sources); dated windows apply otherwise.
+    evergreen: bool = False
 
 
 @dataclass(frozen=True)

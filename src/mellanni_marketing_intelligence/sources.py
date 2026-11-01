@@ -50,6 +50,7 @@ def load_sources(path: Path) -> list[Source]:
                 feed_urls=feed_urls,
                 max_items=int(row.get("max_items", 5)),
                 max_feed_candidates=int(row.get("max_feed_candidates", 8)),
+                evergreen=row.get("evergreen", False) is True,
             )
         )
     return sources

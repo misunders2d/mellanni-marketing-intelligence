@@ -53,7 +53,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supa
   upsert-source --input "$RUN_DIR/source.json"
 ```
 
-Source JSON uses `slug`, `name`, `home_url`, optional `priority`, `why`, `include_patterns`, `allowed_hosts`, `feed_urls`, `max_items`, `max_feed_candidates`, and `enabled`.
+Source JSON uses `slug`, `name`, `home_url`, optional `priority`, `why`, `include_patterns`, `allowed_hosts`, `feed_urls`, `max_items`, `max_feed_candidates`, and `enabled`. Collection rejects undated items: html-index pages are dated from `article:published_time`, JSON-LD `datePublished`, or `<time datetime>` metadata, and pages that stay undated or fall outside the window are skipped with a warning. Locale query parameters are stripped, query variants of one index path count once, and index links need a title of at least three words. An offline config may set `evergreen: true` to keep undated pages; the live `sources` table has no such column yet, so add one through a reviewed migration only when a live source needs it.
 
 Reversible removal or restore:
 
