@@ -20,13 +20,22 @@ USER_AGENT = "MellanniMarketingIntelligence/0.1 (+local research runner)"
 MAX_PAGE_BYTES = 2_000_000
 MAX_FEED_BYTES = 10_000_000
 MAX_CONTENT_CHARS = 30_000
+MIN_ARTICLE_TEXT_CHARS = 200
+UNDATED_FETCH_MULTIPLIER = 3
+TRACKING_QUERY_KEYS = {"ref", "source"}
+LOCALE_QUERY_KEYS = {"mons_sel_locale", "locale", "lang", "language", "hl"}
 Fetch = Callable[[str], tuple[str, str]]
 
 
 def canonical_url(url: str) -> str:
     parsed = urllib.parse.urlsplit(url.strip())
     query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-    query = [(key, value) for key, value in query if not key.lower().startswith("utm_") and key.lower() not in {"ref", "source"}]
+    query = [
+        (key, value)
+        for key, value in query
+        if not key.lower().startswith("utm_")
+        and key.lower() not in TRACKING_QUERY_KEYS | LOCALE_QUERY_KEYS
+    ]
     path = parsed.path or "/"
     if path != "/":
         path = path.rstrip("/")
@@ -99,27 +108,91 @@ def fetch_url(url: str, timeout: float = 20.0) -> tuple[str, str]:
         return raw.decode(charset, errors="replace"), content_type
 
 
+_IGNORED_TAGS = {"script", "style", "noscript", "svg", "template"}
+_CHROME_TAGS = {"nav", "footer", "aside", "form", "header"}
+_BLOCK_TAGS = {
+    "p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "br",
+    "article", "section", "div", "tr", "pre", "figcaption",
+}
+_VOID_TAGS = {"br", "img", "hr", "meta", "link", "input", "source", "wbr"}
+
+
 class _TextParser(HTMLParser):
+    """Collect page text, keeping block breaks and separating article/main content.
+
+    Navigation, footer, aside, form, and page-level header chrome is dropped. A
+    header inside <article> or <main> is kept because it often holds the title.
+    """
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
+        self.article_parts: list[str] = []
+        self.main_parts: list[str] = []
+        self.published_at: list[str] = []
         self._ignored = 0
+        self._chrome: list[str] = []
+        self._article = 0
+        self._main = 0
+        self._ld_json: list[str] | None = None
+
+    def _emit(self, value: str) -> None:
+        if self._ignored or self._chrome:
+            return
+        self.parts.append(value)
+        if self._article:
+            self.article_parts.append(value)
+        if self._main:
+            self.main_parts.append(value)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"script", "style", "noscript", "svg", "template"}:
+        values = {key.lower(): value or "" for key, value in attrs}
+        if tag == "meta":
+            name = (values.get("property") or values.get("name") or values.get("itemprop") or "").lower()
+            if name in {"article:published_time", "datepublished", "date", "dc.date", "publish-date"}:
+                self.published_at.append(values.get("content", ""))
+            return
+        if tag == "time" and values.get("datetime"):
+            self.published_at.append(values["datetime"])
+        if tag == "script" and values.get("type", "").lower() == "application/ld+json":
+            self._ld_json = []
+        if tag in _IGNORED_TAGS:
             self._ignored += 1
-        elif tag in {"p", "h1", "h2", "h3", "h4", "li", "blockquote", "br", "article", "section"}:
-            self.parts.append("\n")
+            return
+        if tag in _CHROME_TAGS and not (tag == "header" and (self._article or self._main)):
+            self._chrome.append(tag)
+            return
+        if tag == "article":
+            self._article += 1
+        elif tag == "main":
+            self._main += 1
+        if tag in _BLOCK_TAGS:
+            self._emit("\n")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "noscript", "svg", "template"} and self._ignored:
-            self._ignored -= 1
-        elif tag in {"p", "h1", "h2", "h3", "h4", "li", "blockquote", "article", "section"}:
-            self.parts.append("\n")
+        if tag == "script" and self._ld_json is not None:
+            match = re.search(r'"datePublished"\s*:\s*"([^"]+)"', "".join(self._ld_json))
+            if match:
+                self.published_at.append(match.group(1))
+            self._ld_json = None
+        if tag in _IGNORED_TAGS:
+            if self._ignored:
+                self._ignored -= 1
+            return
+        if self._chrome and self._chrome[-1] == tag:
+            self._chrome.pop()
+            return
+        if tag in _BLOCK_TAGS and tag not in _VOID_TAGS:
+            self._emit("\n")
+        if tag == "article" and self._article:
+            self._article -= 1
+        elif tag == "main" and self._main:
+            self._main -= 1
 
     def handle_data(self, data: str) -> None:
-        if not self._ignored:
-            self.parts.append(data)
+        if self._ld_json is not None:
+            self._ld_json.append(data)
+        self._emit(data)
 
 
 class _DiscoveryParser(HTMLParser):
@@ -165,10 +238,39 @@ def _clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
-def html_to_text(value: str) -> str:
+def _clean_block_text(value: str) -> str:
+    lines = [re.sub(r"[ \t\r\f\v]+", " ", line).strip() for line in value.split("\n")]
+    text = "\n".join(lines)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def _parse_page(value: str) -> _TextParser:
     parser = _TextParser()
     parser.feed(value)
-    return _clean_text(" ".join(parser.parts))[:MAX_CONTENT_CHARS]
+    parser.close()
+    return parser
+
+
+def _page_text(parser: _TextParser) -> str:
+    for parts in (parser.article_parts, parser.main_parts):
+        text = _clean_block_text("".join(parts))
+        if len(text) >= MIN_ARTICLE_TEXT_CHARS:
+            return text[:MAX_CONTENT_CHARS]
+    return _clean_block_text("".join(parser.parts))[:MAX_CONTENT_CHARS]
+
+
+def html_to_text(value: str) -> str:
+    """Readable page text: prefer <article>, then <main>, keep paragraph breaks."""
+    return _page_text(_parse_page(value))
+
+
+def page_published_at(value: str) -> str | None:
+    """First parseable publication date from page metadata, JSON-LD, or <time>."""
+    for candidate in _parse_page(value).published_at:
+        parsed = parse_date(candidate)
+        if parsed:
+            return parsed
+    return None
 
 
 def _local_name(tag: str) -> str:
@@ -275,7 +377,10 @@ def _url_allowed_for_source(source: Source, url: str) -> bool:
 
 
 def _looks_like_article(source: Source, home_url: str, url: str, title: str) -> bool:
-    if len(title) < 12 or url == canonical_url(home_url):
+    # Navigation and locale links ("English - US", "List products") are short.
+    if len(title) < 12 or len(re.findall(r"\w{2,}", title)) < 3:
+        return False
+    if url == canonical_url(home_url):
         return False
     parsed = urllib.parse.urlsplit(url)
     if not _url_allowed_for_source(source, url):
@@ -297,9 +402,12 @@ def _index_entries(source: Source, document: str) -> tuple[list[_RawEntry], list
     entries: list[_RawEntry] = []
     for url, title in parser.links:
         clean_url = canonical_url(url)
-        if clean_url in seen or not _looks_like_article(source, source.home_url, clean_url, title):
+        # Query variants of one path are the same index page.
+        parsed = urllib.parse.urlsplit(clean_url)
+        path_identity = f"{parsed.netloc}{parsed.path}"
+        if path_identity in seen or not _looks_like_article(source, source.home_url, clean_url, title):
             continue
-        seen.add(clean_url)
+        seen.add(path_identity)
         entries.append(_RawEntry(title, clean_url, None, ""))
     return entries, parser.feed_urls
 
@@ -464,22 +572,38 @@ def collect_source(source: Source, since_days: int, fetcher: Fetch = fetch_url) 
     if duplicate_count:
         status.warnings.append(f"deduplicated {duplicate_count} repeated item(s)")
     eligible_entries = unique_entries
-    status.item_limit_truncated = max(0, len(eligible_entries) - source.max_items)
-    if status.item_limit_truncated:
-        status.warnings.append(
-            f"item limit truncated {status.item_limit_truncated} of {len(eligible_entries)} eligible item(s)"
-        )
+    # Undated entries need a page fetch to learn their date, so allow extra
+    # fetches; entries that stay undated are rejected unless the source is
+    # explicitly evergreen.
+    fetch_budget = source.max_items * UNDATED_FETCH_MULTIPLIER
     accepted: list[ContentItem] = []
-    for entry in eligible_entries[: source.max_items]:
+    attempted = 0
+    undated_rejected = 0
+    stale_rejected = 0
+    for entry in eligible_entries:
+        if len(accepted) >= source.max_items or attempted >= fetch_budget:
+            break
+        attempted += 1
         page_text = ""
+        published_at = entry.published_at
         if not is_youtube_url(entry.url):
             try:
                 page_document, content_type = fetcher(entry.url)
-                page_text = html_to_text(page_document) if "html" in content_type or "xml" not in content_type else entry.summary
+                if "html" in content_type or "xml" not in content_type:
+                    page_text = html_to_text(page_document)
+                    published_at = published_at or page_published_at(page_document)
+                else:
+                    page_text = entry.summary
             except Exception as exc:
                 status.warnings.append(
                     f"item fetch failed {entry.url}; used feed fallback: {type(exc).__name__}: {exc}"
                 )
+        if published_at is None and not source.evergreen:
+            undated_rejected += 1
+            continue
+        if not _within_window(published_at, cutoff):
+            stale_rejected += 1
+            continue
         content = max((entry.summary, page_text, entry.title), key=len)[:MAX_CONTENT_CHARS]
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         item_id = hashlib.sha256(
@@ -492,10 +616,27 @@ def collect_source(source: Source, since_days: int, fetcher: Fetch = fetch_url) 
                 source_name=source.name,
                 url=entry.url,
                 title=entry.title,
-                published_at=entry.published_at,
+                published_at=published_at,
                 content=content,
                 content_hash=content_hash,
             )
+        )
+    if undated_rejected:
+        status.warnings.append(
+            f"rejected {undated_rejected} undated item(s); mark the source evergreen to keep undated pages"
+        )
+    if stale_rejected:
+        status.warnings.append(
+            f"rejected {stale_rejected} item(s) whose page date is outside the window"
+        )
+    status.item_limit_truncated = (
+        max(0, len(eligible_entries) - attempted)
+        if len(accepted) >= source.max_items
+        else 0
+    )
+    if status.item_limit_truncated:
+        status.warnings.append(
+            f"item limit truncated {status.item_limit_truncated} of {len(eligible_entries)} eligible item(s)"
         )
     status.accepted = len(accepted)
     return accepted, status

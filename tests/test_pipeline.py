@@ -17,6 +17,7 @@ from mellanni_marketing_intelligence.collector import (
     _assert_public_response_peer,
     _assert_public_url,
     canonical_url,
+    html_to_text,
     parse_feed,
 )
 from mellanni_marketing_intelligence.pipeline import run_fetch
@@ -37,7 +38,7 @@ def fake_fetch(url: str) -> tuple[str, str]:
             f"""<?xml version="1.0"?><rss><channel><item><title>Useful conversion test</title><link>https://example.com/articles/useful-test?utm_source=x</link><pubDate>{RECENT_RFC822}</pubDate><description><![CDATA[Measured test summary.]]></description></item></channel></rss>""",
             "application/rss+xml",
         ),
-        ARTICLE: ("<html><body><article><h1>Useful conversion test</h1><p>Brand changed one listing image and measured a 14 percent conversion lift against a matched baseline.</p></article></body></html>", "text/html"),
+        ARTICLE: (f"<html><head><meta property=\"article:published_time\" content=\"{RECENT_ISO}\"></head><body><article><h1>Useful conversion test</h1><p>Brand changed one listing image and measured a 14 percent conversion lift against a matched baseline.</p></article></body></html>", "text/html"),
     }
     if url not in documents:
         raise OSError(f"unexpected URL: {url}")
@@ -282,6 +283,82 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(status["accepted"], 1)
             self.assertEqual(manifest["source_failures"], 0)
             self.assertEqual(manifest["exit_code"], 0)
+
+    def _run_index(self, root: Path, home: str, pages: dict[str, str], **overrides: object) -> dict:
+        config = self._write_config(root, feed_urls=[FAILED_FEED], **overrides)
+
+        def fetch(url: str) -> tuple[str, str]:
+            if url == HOME:
+                return home, "text/html"
+            if url in pages:
+                return pages[url], "text/html"
+            raise OSError("feed unavailable")
+
+        return self._run(root, config, fetch)
+
+    def test_undated_index_pages_are_rejected_unless_source_is_evergreen(self) -> None:
+        home = f'<html><body><a href="{ARTICLE}">Useful conversion test article</a></body></html>'
+        page = "<html><body><article><p>Undated evergreen guidance page.</p></article></body></html>"
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = self._run_index(Path(temp), home, {ARTICLE: page})
+            status = manifest["source_statuses"][0]
+            self.assertEqual(status["accepted"], 0)
+            self.assertTrue(any("rejected 1 undated" in warning for warning in status["warnings"]))
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = self._run_index(Path(temp), home, {ARTICLE: page}, evergreen=True)
+            self.assertEqual(manifest["source_statuses"][0]["accepted"], 1)
+
+    def test_index_page_date_outside_window_is_rejected(self) -> None:
+        home = f'<html><body><a href="{ARTICLE}">Useful conversion test article</a></body></html>'
+        page = '<html><body><article><time datetime="2020-01-01T00:00:00Z">Jan 1</time><p>Old.</p></article></body></html>'
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = self._run_index(Path(temp), home, {ARTICLE: page})
+            status = manifest["source_statuses"][0]
+            self.assertEqual(status["accepted"], 0)
+            self.assertTrue(any("outside the window" in warning for warning in status["warnings"]))
+
+    def test_index_drops_locale_variants_and_navigation_titles(self) -> None:
+        dated = f'<html><head><meta property="article:published_time" content="{RECENT_ISO}"></head><body><article><p>Body.</p></article></body></html>'
+        home = (
+            "<html><body>"
+            f'<a href="{ARTICLE}?mons_sel_locale=en_US">English - US</a>'
+            f'<a href="{ARTICLE}?mons_sel_locale=es_US">Espanol - US</a>'
+            '<a href="https://example.com/articles/list">List products</a>'
+            f'<a href="{ARTICLE}?page=2">Useful conversion test article</a>'
+            f'<a href="{ARTICLE}">Useful conversion test article again</a>'
+            "</body></html>"
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = self._run_index(Path(temp), home, {f"{ARTICLE}?page=2": dated, ARTICLE: dated})
+            status = manifest["source_statuses"][0]
+            self.assertEqual(status["discovered"], 1)
+            self.assertEqual([item["url"] for item in manifest["items"]], [f"{ARTICLE}?page=2"])
+
+    def test_canonical_url_strips_locale_parameters(self) -> None:
+        self.assertEqual(
+            canonical_url("https://Sell.Amazon.com/blog/announcements/?mons_sel_locale=en_US&id=7"),
+            "https://sell.amazon.com/blog/announcements?id=7",
+        )
+
+    def test_page_text_prefers_article_and_keeps_paragraphs(self) -> None:
+        document = (
+            "<html><body><header>Site menu Sign in</header><nav>Home Blog Pricing</nav>"
+            "<article><header><h1>Prime Day results</h1></header>"
+            f"<p>{'First paragraph with measured detail. ' * 4}</p>"
+            f"<p>{'Second paragraph with the caveat. ' * 4}</p></article>"
+            "<footer>Cookie settings Copyright</footer></body></html>"
+        )
+        text = html_to_text(document)
+        self.assertTrue(text.startswith("Prime Day results"))
+        self.assertIn("\n\nSecond paragraph", text)
+        for chrome in ("Site menu", "Home Blog", "Cookie settings"):
+            self.assertNotIn(chrome, text)
+
+    def test_page_text_falls_back_to_whole_page_without_chrome(self) -> None:
+        text = html_to_text(
+            "<html><body><nav>Menu</nav><div><p>Short body.</p></div><footer>Legal</footer></body></html>"
+        )
+        self.assertEqual(text, "Short body.")
 
     def test_total_failure_keeps_failure_signal_and_all_probe_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
