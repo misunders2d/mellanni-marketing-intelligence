@@ -27,6 +27,7 @@ FEED = "https://example.com/feed.xml"
 ARTICLE = "https://example.com/articles/useful-test"
 FAILED_FEED = "https://example.com/broken.xml"
 RECENT_RFC822 = format_datetime(datetime.now(UTC))
+RECENT_ISO = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def fake_fetch(url: str) -> tuple[str, str]:
@@ -479,7 +480,7 @@ class PipelineTests(unittest.TestCase):
                 include_patterns=[],
                 feed_urls=[youtube_feed],
             )
-            feed = f"""<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><entry><title>Episode title long enough</title><link rel="alternate" href="{youtube_url}"/><published>2026-09-07T00:00:00Z</published><media:group><media:content/><media:description>Episode evidence.</media:description></media:group></entry></feed>"""
+            feed = f"""<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><entry><title>Episode title long enough</title><link rel="alternate" href="{youtube_url}"/><published>{RECENT_ISO}</published><media:group><media:content/><media:description>Episode evidence.</media:description></media:group></entry></feed>"""
             calls: list[str] = []
 
             def fetch(url: str) -> tuple[str, str]:
