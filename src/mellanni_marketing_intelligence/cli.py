@@ -2,18 +2,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from .pipeline import run_fetch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# Fetched pages are run artifacts: keep them outside the repository by default.
+DEFAULT_JOURNAL_ROOT = Path(
+    os.environ.get("MELLANNI_JOURNAL_ROOT", "/tmp/mellanni-marketing-journal")
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fetch Mellanni marketing sources into a local journal")
     parser.add_argument("--config", type=Path, default=PROJECT_ROOT / "config" / "sources.json")
-    parser.add_argument("--journal-root", type=Path, default=PROJECT_ROOT / "journal")
+    parser.add_argument("--journal-root", type=Path, default=DEFAULT_JOURNAL_ROOT)
     parser.add_argument("--since-days", type=int, default=8)
     parser.add_argument("--fetch-workers", type=int, default=6)
     parser.add_argument("--source", action="append", default=[], help="Fetch only one source slug; repeat for several")

@@ -30,7 +30,7 @@ Fetch-only debugging for Plane project `MKT-1`:
 
 1. Collect recent items from the live source registry.
 2. Normalize fetched page/feed text.
-3. Write one Markdown file per item under ignored local `journal/<run>/`.
+3. Write one Markdown file per item under `/tmp/mellanni-marketing-journal/<run>/`, outside the repository.
 4. Write a machine-readable manifest with source health and item paths.
 
 The fetch-only command does not start agents, score content, schedule jobs, or deliver messages.
@@ -47,7 +47,7 @@ Target one source while debugging:
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence --source seller-sessions
 ```
 
-Default output lives under ignored `journal/`. Source extracts are local artifacts and remain untracked.
+Default output lives under `/tmp/mellanni-marketing-journal/`, outside the repository (override with `--journal-root` or `MELLANNI_JOURNAL_ROOT`). Source extracts are local run artifacts; delete them after use and never commit them.
 
 ## YouTube summarizer
 
@@ -63,10 +63,10 @@ Run every YouTube video in one collection manifest. Each video gets separate JSO
 
 ```bash
 node --env-file=.env scripts/youtube-summary.mjs \
-  --manifest journal/RUN_ID/manifest.json
+  --manifest /tmp/mellanni-marketing-journal/RUN_ID/manifest.json
 ```
 
-Batch output defaults to `journal/RUN_ID/youtube/`; the collection manifest stays
+Batch output defaults to `/tmp/mellanni-marketing-journal/RUN_ID/youtube/`; the collection manifest stays
 byte-for-byte immutable. Weekly batch mode requires agentic processing and defaults
 to concurrency 2, a 600-second item timeout, a 3,600-second batch deadline, and a
 25-video preflight cap. Single-URL debugging supports static frame sampling.
@@ -92,14 +92,14 @@ Export enabled sources into the existing fetcher format:
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  export-sources --output journal/runtime/sources.json
+  export-sources --output /tmp/mellanni-marketing-journal/runtime/sources.json
 ```
 
 Run collection from that exact snapshot:
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence \
-  --config journal/runtime/sources.json --since-days 8
+  --config /tmp/mellanni-marketing-journal/runtime/sources.json --since-days 8
 ```
 
 Validate private evidence packet and digest input before its public/admin projections:
@@ -118,7 +118,7 @@ Push an agent-produced digest as a draft:
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
   push-digest --input examples/digest.example.json \
   --evidence-packet examples/evidence-packet.example.json \
-  --manifest journal/<run>/manifest.json
+  --manifest /tmp/mellanni-marketing-journal/<run>/manifest.json
 ```
 
 Manifest, bound item/YouTube artifacts, evidence packet, and canonical public/private digest content create compact linked run proof. Publication atomically checks current content against that proof. Keep details in canonical digest runbook; raw run artifacts are not publication authority and are never uploaded.
@@ -127,14 +127,14 @@ For a standalone collection outside `mellanni-weekly`, record a run independentl
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  record-run --manifest journal/<run>/manifest.json
+  record-run --manifest /tmp/mellanni-marketing-journal/<run>/manifest.json
 ```
 
 For that standalone path, record a no-digest outcome explicitly:
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence.supabase_content \
-  record-run --manifest journal/<run>/manifest.json \
+  record-run --manifest /tmp/mellanni-marketing-journal/<run>/manifest.json \
   --outcome no-digest --reason "missing required Mellanni MCP capability"
 ```
 

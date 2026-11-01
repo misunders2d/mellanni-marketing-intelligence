@@ -104,7 +104,7 @@
       "window": "Trailing 28 days, America/Los_Angeles",
       "grain": "Portfolio and day",
       "metrics": [
-        "contribution efficiency",
+        "contribution margin",
         "demand"
       ],
       "results": {
