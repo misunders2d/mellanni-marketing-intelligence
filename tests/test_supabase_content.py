@@ -1053,6 +1053,31 @@ class SupabaseContentTests(unittest.TestCase):
         self.assertNotIn("'legacy-1'", migration)
         self.assertIn("legacy publication lock expected 3 published rows", migration)
 
+    def test_publication_timestamp_migration_keeps_proof_gate(self) -> None:
+        migrations = PROJECT_ROOT / "supabase" / "migrations"
+        previous = (migrations / "20260910120000_restore_preproof_publications.sql").read_text(
+            encoding="utf-8"
+        )
+        migration = (migrations / "20261101120000_server_clock_digest_published_at.sql").read_text(
+            encoding="utf-8"
+        )
+
+        def guard_body(sql: str) -> str:
+            start = sql.index("create or replace function private.guard_digest_content_and_publication()")
+            return sql[start : sql.index("$$;", start)]
+
+        current = guard_body(migration)
+        prior = guard_body(previous)
+        for line in prior.splitlines():
+            self.assertIn(line, current)
+        self.assertIn("new.published_at := timezone('utc', now());", current)
+        self.assertIn("new.published_at := old.published_at;", current)
+        self.assertIn("has_verified_digest_publication_basis(", current)
+        self.assertIn(
+            "revoke all on function private.guard_digest_content_and_publication()",
+            migration,
+        )
+
     def test_authenticated_digest_allows_internal_business_metrics(self) -> None:
         digest, packet = example_documents()
         digest["summary"] = "Sales reached $1,250,000 across 18,400 orders."

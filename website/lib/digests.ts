@@ -77,92 +77,28 @@ export type DigestRow = {
   title: string;
   summary: string;
   body: unknown;
+  status?: "draft" | "published";
 };
 
-export const sampleDigest: Digest = {
-  slug: "sample-weekly-intelligence-brief",
-  date: "2026-08-31",
-  title: "Weekly marketing intelligence",
-  summary:
-    "Illustrative structure for decision-useful Mellanni guidance and broader ecommerce signals.",
-  topics: ["Profitability", "Creator commerce"],
-  findings: [],
-  actions: [
-    {
-      id: "protect-margin-test",
-      title: "Keep the next growth test inside the private margin guardrail",
-      externalSignal:
-        "Operators are increasingly evaluating channel growth on contribution rather than attributed revenue alone.",
-      sourceIds: ["operator-source"],
-      memory: {
-        outcome: "no-relevant-record",
-        comparison: "No historical record was specific enough to change this illustrative decision.",
-        decisionImpact: "Use fresh private Mellanni evidence as the decision basis.",
-      },
-      mellanniEvidence: {
-        entityScope: "Illustrative Mellanni portfolio",
-        conclusion: "Private portfolio evidence supports an efficiency-first test; exact values and identifiers remain withheld.",
-        source: "Mellanni first-party reporting",
-        window: "Trailing review period, America/Los_Angeles",
-        grain: "Portfolio and day",
-      },
-      guidance: "Run one bounded channel test and evaluate contribution alongside delivery and attributed demand.",
-      timebox: "Two weekly review cycles",
-      kpi: "Contribution efficiency versus the private baseline",
-      successCondition: "Efficiency improves versus the private baseline while demand remains inside the approved operating range.",
-      stopCondition: "Stop if contribution crosses the private guardrail or inventory can no longer support the test.",
-      confidence: "medium",
-      limitations: ["This sample contains no real Mellanni metric or identifier."],
-      skillReferences: [
-        {
-          uri: "mellanni://skills/source-routing",
-          applicability: "Choose the first-party source that owns each required business metric.",
-          requiredInputs: ["entity scope", "metric", "time window"],
-          intendedNextOperation: "Route the approved test readback to the correct Mellanni provider.",
-        },
-      ],
-    },
-  ],
-  signals: [
-    {
-      id: "creator-commerce-signal",
-      title: "Creator commerce is becoming a discovery layer",
-      externalSignal:
-        "Creator-led commerce is expanding beyond direct conversion into product discovery and later demand capture.",
-      sourceIds: ["creator-source"],
-      memory: {
-        outcome: "consistent",
-        comparison: "Signal matches historical guidance to separate discovery from measured conversion.",
-        decisionImpact: "Keep it visible, but do not call it a Mellanni result without a bounded validation test.",
-      },
-      whyItMatters: "This may affect creative, attribution, and demand-capture choices across ecommerce channels, not only Amazon.",
-      nextValidation: "Define a small creator-content holdout, then query branded demand and downstream conversion.",
-      skillReferences: [
-        {
-          uri: "mellanni://skills/helium10-research",
-          applicability: "Check whether external discovery coincides with branded or category search movement.",
-          requiredInputs: ["seed keywords", "marketplace", "comparison window"],
-          intendedNextOperation: "Compare bounded keyword discovery with first-party demand evidence.",
-        },
-      ],
-    },
-  ],
-  sources: [
-    {
-      id: "operator-source",
-      name: "Illustrative operator source",
-      url: "https://example.com/operator-economics",
-      note: "Illustrative direct evidence URL; replace it with a real source in an actual digest.",
-    },
-    {
-      id: "creator-source",
-      name: "Illustrative creator-commerce source",
-      url: "https://example.com/creator-commerce",
-      note: "Illustrative direct evidence URL; replace it with a real source in an actual digest.",
-    },
-  ],
-  isSample: true,
-};
+export type DigestFinding =
+  | { kind: "action"; item: DigestAction }
+  | { kind: "signal"; item: DigestSignal };
+
+export function digestFindings(digest: Digest): DigestFinding[] {
+  return [
+    ...digest.actions.map((item) => ({ kind: "action" as const, item })),
+    ...digest.signals.map((item) => ({ kind: "signal" as const, item })),
+  ];
+}
+
+/** Memory notes worth showing to readers: they change or extend a prior decision. */
+export function isNotableMemory(memory: DigestMemory) {
+  return memory.outcome === "contradicts" || memory.outcome === "extends";
+}
+
+export function digestHref(slug: string, findingId?: string) {
+  return `/digests/${slug}/${findingId ? `#${findingId}` : ""}`;
+}
 
 function stringList(value: unknown): string[] {
   return Array.isArray(value)

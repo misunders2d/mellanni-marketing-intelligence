@@ -26,8 +26,21 @@ type DigestAdminRow = {
   title: string;
   published_on: string;
   status: "draft" | "published";
+  content_sha256: string | null;
+  proofVerified: boolean;
   private_body: {
     actions?: PrivateDecisionAction[];
+  } | null;
+};
+
+type RunProofRow = {
+  digest_id: string | null;
+  status: string;
+  outcome: string;
+  proof: {
+    schema_version?: number | string;
+    digest_content_sha256?: string;
+    agentic_verified?: boolean | string;
   } | null;
 };
 
@@ -83,6 +96,25 @@ function lines(value: string) {
     .filter(Boolean);
 }
 
+/** Mirrors the database publication gate so the button state matches what the trigger allows. */
+function hasVerifiedProof(digest: { id: string; content_sha256: string | null }, runs: readonly RunProofRow[]) {
+  return Boolean(digest.content_sha256) && runs.some((run) => (
+    run.digest_id === digest.id
+    && run.status === "succeeded"
+    && run.outcome === "digest"
+    && String(run.proof?.schema_version) === "2"
+    && String(run.proof?.agentic_verified) === "true"
+    && run.proof?.digest_content_sha256 === digest.content_sha256
+  ));
+}
+
+function publicationErrorMessage(message: string) {
+  if (message.includes("no verified run for current content")) {
+    return "This draft has no verified run for its current content, so the database refused to publish it. Rerun mellanni-weekly to link proof for this exact content, then try again.";
+  }
+  return "The change could not be saved. Reload the page and try again; if it keeps failing, check the runner logs.";
+}
+
 function slugFromName(value: string) {
   return value
     .trim()
@@ -115,6 +147,7 @@ export function AdminConsole() {
   const [digests, setDigests] = useState<DigestAdminRow[]>([]);
   const [draft, setDraft] = useState<SourceDraft>(EMPTY_SOURCE);
   const [busy, setBusy] = useState(false);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -123,25 +156,27 @@ export function AdminConsole() {
     setBusy(true);
     setError("");
 
-    const [sourceResult, digestResult, privateBodyResult] = await Promise.all([
+    const [sourceResult, digestResult, privateBodyResult, runResult] = await Promise.all([
       supabase.from("sources").select("*").order("name"),
       supabase
         .from("digests")
-        .select("id,slug,title,published_on,status")
+        .select("id,slug,title,published_on,status,content_sha256")
         .order("published_on", { ascending: false }),
       supabase
         .from("digest_private_bodies")
         .select("digest_id,private_body"),
+      supabase
+        .from("runs")
+        .select("digest_id,status,outcome,proof:manifest->runProof")
+        .not("digest_id", "is", null),
     ]);
 
-    if (sourceResult.error || digestResult.error || privateBodyResult.error) {
-      setError(
-        sourceResult.error?.message
-          ?? digestResult.error?.message
-          ?? privateBodyResult.error?.message
-          ?? "Unable to load admin data.",
-      );
+    const loadError = sourceResult.error ?? digestResult.error ?? privateBodyResult.error ?? runResult.error;
+    if (loadError) {
+      console.error("Admin data load failed:", loadError.message);
+      setError("Admin data could not be loaded. Reload the page; if it keeps failing, confirm your admin role.");
     } else {
+      const runs = (runResult.data ?? []) as RunProofRow[];
       const privateBodies = new Map(
         ((privateBodyResult.data ?? []) as DigestPrivateBodyRow[])
           .map((row) => [row.digest_id, row.private_body]),
@@ -150,6 +185,7 @@ export function AdminConsole() {
       setDigests(
         (digestResult.data ?? []).map((digest) => ({
           ...digest,
+          proofVerified: hasVerifiedProof(digest, runs),
           private_body: privateBodies.get(digest.id) ?? null,
         })) as DigestAdminRow[],
       );
@@ -228,16 +264,18 @@ export function AdminConsole() {
     if (!supabase) return;
     setBusy(true);
     setError("");
+    setMessage("");
+    setConfirmingId(null);
     const publishing = digest.status === "draft";
+    // The database trigger re-checks proof and sets published_at from the server clock.
     const { error: updateError } = await supabase
       .from("digests")
-      .update({
-        status: publishing ? "published" : "draft",
-        published_at: publishing ? new Date().toISOString() : null,
-      })
+      .update({ status: publishing ? "published" : "draft" })
       .eq("id", digest.id);
-    if (updateError) setError(updateError.message);
-    else {
+    if (updateError) {
+      console.error("Digest state change failed:", updateError.message);
+      setError(publicationErrorMessage(updateError.message));
+    } else {
       setMessage(publishing ? "Digest published." : "Digest returned to draft.");
       await loadData();
     }
@@ -380,6 +418,14 @@ export function AdminConsole() {
               <div className="digest-admin-content">
                 <p className="source-status">{digest.status} · {digest.published_on}</p>
                 <h3>{digest.title}</h3>
+                <p
+                  className={digest.proofVerified ? "proof-status proof-verified" : "proof-status proof-missing"}
+                  id={`proof-${digest.id}`}
+                >
+                  {digest.proofVerified
+                    ? "Verified run proof matches the current content."
+                    : "No verified run proof for the current content. Publishing is blocked until mellanni-weekly links proof."}
+                </p>
                 {digest.private_body?.actions?.length ? (
                   <details className="private-decision-guide">
                     <summary>
@@ -422,9 +468,34 @@ export function AdminConsole() {
                   </details>
                 ) : null}
               </div>
-              <button className="secondary-button" type="button" onClick={() => void toggleDigest(digest)} disabled={busy}>
-                {digest.status === "draft" ? "Publish" : "Return to draft"}
-              </button>
+              <div className="digest-admin-actions">
+                <Link className="secondary-button" href={`/admin/preview/${digest.slug}/`}>Preview</Link>
+                {digest.status === "published" ? (
+                  <button className="secondary-button" type="button" onClick={() => void toggleDigest(digest)} disabled={busy}>
+                    Return to draft
+                  </button>
+                ) : confirmingId === digest.id ? (
+                  <div className="publish-confirm" role="group" aria-label={`Confirm publishing ${digest.title}`}>
+                    <p>Publish to every active Mellanni member?</p>
+                    <button className="primary-button" type="button" onClick={() => void toggleDigest(digest)} disabled={busy}>
+                      Confirm publish
+                    </button>
+                    <button className="secondary-button" type="button" onClick={() => setConfirmingId(null)} disabled={busy}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => setConfirmingId(digest.id)}
+                    disabled={busy || !digest.proofVerified}
+                    aria-describedby={`proof-${digest.id}`}
+                  >
+                    Publish
+                  </button>
+                )}
+              </div>
             </article>
           ))}
           {!digests.length ? <p>No draft or published digests yet.</p> : null}

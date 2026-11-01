@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { formatDigestDate, type Digest } from "@/lib/digests";
+import { digestHref, formatDigestDate, type Digest } from "@/lib/digests";
 
 export function DigestCard({ digest }: { digest: Digest }) {
   return (
@@ -11,7 +11,7 @@ export function DigestCard({ digest }: { digest: Digest }) {
       <div className="digest-card-body">
         <div>
           <h3>
-            <Link href={"/digests/" + digest.slug}>{digest.title}</Link>
+            <Link href={digestHref(digest.slug)}>{digest.title}</Link>
           </h3>
           <p>{digest.summary}</p>
         </div>
@@ -21,7 +21,7 @@ export function DigestCard({ digest }: { digest: Digest }) {
           ))}
         </ul>
       </div>
-      <Link className="text-link" href={"/digests/" + digest.slug}>
+      <Link className="text-link" href={digestHref(digest.slug)}>
         Read this digest <span aria-hidden="true">→</span>
       </Link>
     </article>

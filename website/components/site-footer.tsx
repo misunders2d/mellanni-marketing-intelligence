@@ -10,7 +10,7 @@ export function SiteFooter() {
         </p>
         <nav aria-label="Footer navigation">
           <Link href="/search">Search the archive</Link>
-          <Link href="/calendar">Browse by date</Link>
+          <Link href="/calendar">Browse by month</Link>
         </nav>
       </div>
     </footer>
