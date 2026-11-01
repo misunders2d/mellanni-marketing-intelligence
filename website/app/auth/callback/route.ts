@@ -1,14 +1,7 @@
 import { NextResponse } from "next/server";
 import { usedOAuth } from "@/lib/auth-claims";
+import { safeNextPath } from "@/lib/safe-next";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-
-function safeNext(value: string | null) {
-  return value?.startsWith("/")
-    && !value.startsWith("//")
-    && !value.includes("\\")
-    ? value
-    : "/";
-}
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
@@ -40,5 +33,5 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login/?error=access_denied", requestUrl.origin));
   }
 
-  return NextResponse.redirect(new URL(safeNext(requestUrl.searchParams.get("next")), requestUrl.origin));
+  return NextResponse.redirect(new URL(safeNextPath(requestUrl.searchParams.get("next")), requestUrl.origin));
 }

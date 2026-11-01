@@ -9,8 +9,13 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function SearchPage() {
-  const digests = await getPublishedDigests();
+type SearchPageProps = {
+  searchParams: Promise<{ q?: string | string[] }>;
+};
+
+export default async function SearchPage({ searchParams }: SearchPageProps) {
+  const [digests, { q }] = await Promise.all([getPublishedDigests(), searchParams]);
+  const initialQuery = (Array.isArray(q) ? q[0] : q)?.slice(0, 200) ?? "";
 
   return (
     <div className="shell interior-page">
@@ -20,10 +25,10 @@ export default async function SearchPage() {
           <h1>Search every signal.</h1>
         </div>
         <p>
-          Look across briefing titles, findings, topics, and named sources. Fuzzy matching helps when the exact wording is not at hand.
+          Look across Actions, External Signals, topics, and named sources. Each result opens the exact finding.
         </p>
       </header>
-      <SearchExplorer digests={digests} />
+      <SearchExplorer digests={digests} initialQuery={initialQuery} />
     </div>
   );
 }

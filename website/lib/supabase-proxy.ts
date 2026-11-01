@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { usedOAuth } from "@/lib/auth-claims";
+import { safeNextPath } from "@/lib/safe-next";
 
 const PUBLIC_PATHS = new Set(["/login", "/auth/callback"]);
 
@@ -15,6 +16,11 @@ function copyCookies(source: NextResponse, destination: NextResponse) {
 
 function redirect(request: NextRequest, response: NextResponse, pathname: string) {
   return copyCookies(response, NextResponse.redirect(new URL(pathname, request.url)));
+}
+
+function loginRedirectPath(request: NextRequest) {
+  const next = request.nextUrl.pathname + request.nextUrl.search;
+  return next === "/" ? "/login/" : `/login/?next=${encodeURIComponent(next)}`;
 }
 
 export async function updateSession(request: NextRequest) {
@@ -50,7 +56,7 @@ export async function updateSession(request: NextRequest) {
     : undefined;
 
   if (!userId) {
-    return isPublic ? response : redirect(request, response, "/login/");
+    return isPublic ? response : redirect(request, response, loginRedirectPath(request));
   }
 
   const { data: member } = await supabase
@@ -66,7 +72,9 @@ export async function updateSession(request: NextRequest) {
       : redirect(request, response, "/login/?error=access_denied");
   }
 
-  if (path === "/login") return redirect(request, response, "/");
+  if (path === "/login") {
+    return redirect(request, response, safeNextPath(request.nextUrl.searchParams.get("next")));
+  }
   if ((path === "/admin" || path.startsWith("/admin/")) && member.role !== "admin") {
     return redirect(request, response, "/");
   }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LoginForm } from "@/components/login-form";
+import { safeNextPath } from "@/lib/safe-next";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -7,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 type LoginPageProps = {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 };
 
 const messages: Record<string, string> = {
@@ -17,7 +18,7 @@ const messages: Record<string, string> = {
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const { error } = await searchParams;
+  const { error, next } = await searchParams;
 
   return (
     <div className="shell login-page">
@@ -28,7 +29,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           Use your company Google account. Access is limited to active personal addresses ending in <strong>@mellanni.com</strong>.
         </p>
         {error ? <p className="form-error" role="alert">{messages[error] ?? messages.auth_callback}</p> : null}
-        <LoginForm />
+        <LoginForm next={safeNextPath(next)} />
       </section>
     </div>
   );

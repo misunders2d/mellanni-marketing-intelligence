@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { getBrowserSupabase } from "@/lib/supabase-browser";
 
-export function LoginForm() {
+export function LoginForm({ next }: { next: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -23,7 +23,7 @@ export function LoginForm() {
           hd: "mellanni.com",
           prompt: "select_account",
         },
-        redirectTo: `${window.location.origin}/auth/callback/?next=/`,
+        redirectTo: `${window.location.origin}/auth/callback/?next=${encodeURIComponent(next)}`,
       },
     });
 

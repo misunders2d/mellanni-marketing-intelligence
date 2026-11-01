@@ -1,20 +1,28 @@
-import type { Digest } from "@/lib/digests";
+import { digestHref, type Digest } from "@/lib/digests";
 
 type WeightedField = {
   text: string;
   weight: number;
 };
 
-export type IndexedDigest = {
+export type SearchHit = {
+  key: string;
+  kind: "digest" | "action" | "signal";
   digest: Digest;
+  title: string;
+  snippet: string;
+  href: string;
+};
+
+export type IndexedEntry = {
+  hit: SearchHit;
   fields: readonly WeightedField[];
   fullText: string;
 };
 
-export type DigestSearchResult = {
-  digest: Digest;
-  score: number;
-};
+export type SearchResult = SearchHit & { score: number };
+
+const MAX_RESULTS = 50;
 
 function normalize(value: string) {
   return value
@@ -25,31 +33,72 @@ function normalize(value: string) {
     .trim();
 }
 
-export function indexDigest(digest: Digest): IndexedDigest {
-  const fields = [
-    { text: normalize(digest.title), weight: 8 },
-    { text: normalize(digest.summary), weight: 6 },
-    ...digest.topics.map((topic) => ({ text: normalize(topic), weight: 7 })),
-    ...digest.findings.map((finding) => ({ text: normalize(finding), weight: 4 })),
-    ...digest.actions.flatMap((action) => [
-      { text: normalize(action.title), weight: 7 },
-      { text: normalize(action.externalSignal), weight: 5 },
-      { text: normalize(action.guidance), weight: 6 },
-      { text: normalize(action.mellanniEvidence.conclusion), weight: 4 },
-    ]),
-    ...digest.signals.flatMap((signal) => [
-      { text: normalize(signal.title), weight: 7 },
-      { text: normalize(signal.externalSignal), weight: 5 },
-      { text: normalize(signal.whyItMatters), weight: 5 },
-    ]),
-    ...digest.sources.map((source) => ({ text: normalize(source.name), weight: 5 })),
-  ];
+function entry(hit: SearchHit, fields: { text: string; weight: number }[]): IndexedEntry {
+  const normalized = fields
+    .map((field) => ({ text: normalize(field.text), weight: field.weight }))
+    .filter((field) => field.text);
+  return { hit, fields: normalized, fullText: normalized.map((field) => field.text).join(" ") };
+}
 
-  return {
-    digest,
-    fields,
-    fullText: fields.map((field) => field.text).join(" "),
-  };
+/** One entry per digest plus one per Action and External Signal, so hits deep-link to the finding. */
+export function indexDigests(digests: readonly Digest[]): IndexedEntry[] {
+  return digests.flatMap((digest) => {
+    const sourceName = (ids: readonly string[]) =>
+      ids.flatMap((id) => digest.sources.filter((source) => source.id === id).map((source) => ({ text: source.name, weight: 4 })));
+    const digestEntry = entry(
+      {
+        key: digest.slug,
+        kind: "digest",
+        digest,
+        title: digest.title,
+        snippet: digest.summary,
+        href: digestHref(digest.slug),
+      },
+      [
+        { text: digest.title, weight: 8 },
+        { text: digest.summary, weight: 6 },
+        ...digest.topics.map((topic) => ({ text: topic, weight: 7 })),
+        ...digest.findings.map((finding) => ({ text: finding, weight: 4 })),
+        ...digest.sources.map((source) => ({ text: source.name, weight: 3 })),
+      ],
+    );
+    const actionEntries = digest.actions.map((action) => entry(
+      {
+        key: `${digest.slug}#${action.id}`,
+        kind: "action",
+        digest,
+        title: action.title,
+        snippet: action.guidance,
+        href: digestHref(digest.slug, action.id),
+      },
+      [
+        { text: action.title, weight: 8 },
+        { text: action.guidance, weight: 6 },
+        { text: action.externalSignal, weight: 5 },
+        { text: action.mellanniEvidence.conclusion, weight: 4 },
+        { text: action.kpi, weight: 4 },
+        ...sourceName(action.sourceIds),
+      ],
+    ));
+    const signalEntries = digest.signals.map((signal) => entry(
+      {
+        key: `${digest.slug}#${signal.id}`,
+        kind: "signal",
+        digest,
+        title: signal.title,
+        snippet: signal.whyItMatters || signal.externalSignal,
+        href: digestHref(digest.slug, signal.id),
+      },
+      [
+        { text: signal.title, weight: 8 },
+        { text: signal.externalSignal, weight: 5 },
+        { text: signal.whyItMatters, weight: 5 },
+        { text: signal.nextValidation, weight: 4 },
+        ...sourceName(signal.sourceIds),
+      ],
+    ));
+    return [digestEntry, ...actionEntries, ...signalEntries];
+  });
 }
 
 function editDistance(left: string, right: string) {
@@ -104,23 +153,23 @@ function termScore(term: string, field: WeightedField) {
   return best;
 }
 
-export function searchDigestIndex(
-  index: readonly IndexedDigest[],
+export function searchIndex(
+  index: readonly IndexedEntry[],
   query: string,
-): DigestSearchResult[] {
+): SearchResult[] {
   const normalizedQuery = normalize(query);
   if (!normalizedQuery) return [];
 
   const terms = normalizedQuery.split(" ");
-  const results: DigestSearchResult[] = [];
+  const results: SearchResult[] = [];
 
-  for (const entry of index) {
-    let score = entry.fullText.includes(normalizedQuery) ? 120 : 0;
+  for (const indexed of index) {
+    let score = indexed.fullText.includes(normalizedQuery) ? 120 : 0;
     let matchedAllTerms = true;
 
     for (const term of terms) {
       let bestTermScore = 0;
-      for (const field of entry.fields) {
+      for (const field of indexed.fields) {
         bestTermScore = Math.max(bestTermScore, termScore(term, field));
       }
 
@@ -131,12 +180,14 @@ export function searchDigestIndex(
       score += bestTermScore;
     }
 
-    if (matchedAllTerms) results.push({ digest: entry.digest, score });
+    if (matchedAllTerms) results.push({ ...indexed.hit, score });
   }
 
-  return results.sort(
-    (left, right) =>
-      right.score - left.score ||
-      right.digest.date.localeCompare(left.digest.date),
-  );
+  return results
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        right.digest.date.localeCompare(left.digest.date),
+    )
+    .slice(0, MAX_RESULTS);
 }

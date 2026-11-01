@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { DigestCalendar } from "@/components/digest-calendar";
+import { DigestMonthList } from "@/components/digest-month-list";
 import { getPublishedDigests } from "@/lib/supabase-public";
 
 export const metadata: Metadata = {
-  title: "Calendar",
-  description: "Browse Mellanni Marketing Intelligence weekly digests by publication date.",
+  title: "Archive by month",
+  description: "Browse Mellanni Marketing Intelligence weekly digests by publication month.",
 };
 
 export const dynamic = "force-dynamic";
@@ -17,13 +17,11 @@ export default async function CalendarPage() {
       <header className="page-header split-header">
         <div>
           <p className="eyebrow">Browse by date</p>
-          <h1>The publication calendar.</h1>
+          <h1>Archive by month.</h1>
         </div>
-        <p>
-          Move month by month through the archive. Highlighted dates open the briefing published that week.
-        </p>
+        <p>Every published edition, newest first, grouped by the month it was published.</p>
       </header>
-      <DigestCalendar digests={digests} />
+      <DigestMonthList digests={digests} />
     </div>
   );
 }

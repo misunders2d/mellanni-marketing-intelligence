@@ -1,14 +1,21 @@
 import Link from "next/link";
 import { AuthControls } from "@/components/auth-controls";
+import { NavLinks } from "@/components/nav-links";
+import { getMemberRole } from "@/lib/supabase-public";
 
-const navigation = [
+const READER_NAVIGATION = [
   { href: "/", label: "Home" },
   { href: "/search", label: "Search" },
-  { href: "/calendar", label: "Calendar" },
-  { href: "/admin", label: "Admin" },
+  { href: "/calendar", label: "Archive" },
 ];
 
-export function SiteHeader() {
+export async function SiteHeader() {
+  // Display only: proxy.ts and RLS still enforce admin access.
+  const role = await getMemberRole();
+  const navigation = role === "admin"
+    ? [...READER_NAVIGATION, { href: "/admin", label: "Admin" }]
+    : READER_NAVIGATION;
+
   return (
     <header className="site-header">
       <div className="shell header-inner">
@@ -17,15 +24,11 @@ export function SiteHeader() {
           <span className="wordmark-title">Marketing Intelligence</span>
         </Link>
         <div className="header-actions">
-          <nav aria-label="Primary navigation">
-            <ul className="nav-list">
-              {navigation.map((item) => (
-                <li key={item.href}>
-                  <Link href={item.href}>{item.label}</Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          {role ? (
+            <nav aria-label="Primary navigation">
+              <NavLinks items={navigation} />
+            </nav>
+          ) : null}
           <AuthControls />
         </div>
       </div>
