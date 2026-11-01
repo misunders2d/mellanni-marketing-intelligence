@@ -81,7 +81,7 @@ Load `mellanni://skills/source-routing`, then exact provider playbook. Use provi
 
 Private packet must identify concrete owned entity, provider, metric, exact value, Pacific-time window, grain, and query result. Keepa and Helium 10 may support research but do not replace first-party Mellanni evidence.
 
-Member-visible digest is internal company content. It may include exact sales, spend, margin, advertising, conversion, inventory, percentage, unit, and decision-threshold values plus business entity identifiers needed to act, such as ASIN, SKU, campaign, portfolio, or keyword names/IDs. It must not expose secrets, credentials, private auth/account/billing identifiers, customer or employee PII, raw provider rows, or raw Professional Memory records. Set `privacy.exactValuesPublished` and `privacy.businessIdentifiersPublished` to match the member-visible digest; runtime validation derives both provenance-neutral flags and rejects mismatches. `rawEvidenceWithheld: true` means raw provider/query rows and raw memory records remain private, not that decision-useful internal data must be removed.
+Member-visible digest is internal company content. It may include exact sales, spend, margin, advertising, conversion, inventory, percentage, unit, and decision-threshold values plus business entity identifiers needed to act, such as ASIN, SKU, campaign, portfolio, or keyword names/IDs. It must not expose secrets, credentials, private auth/account/billing identifiers, customer or employee PII, raw provider rows, or raw Professional Memory records. Omit `privacy`; runtime derives both provenance-neutral flags (`exactValuesPublished`, `businessIdentifiersPublished`) from member-visible content and ignores any agent-supplied value. `rawEvidenceWithheld: true` means raw provider/query rows and raw memory records remain private, not that decision-useful internal data must be removed.
 
 The same validated digest input carries `privateDecision` with full structured admin-only operational detail. The CLI removes that object from member-visible `body` and stores it in admin-only `digest_private_bodies.private_body`; decision-useful metrics, thresholds, and business entity identifiers may also appear in normal member-visible fields. Raw provider results and memory records remain only in private run record. Reader and anonymous access to private bodies is prohibited by grants and RLS.
 
@@ -119,7 +119,8 @@ Private packet follows `schemas/evidence-packet.schema.json`; digest input follo
 - every superseded finding exists, with matching title, in captured prior published digests;
 - member-visible exact business metrics and action-needed business entity identifiers are allowed; runtime scans every projected string plus title and summary for recognizable secrets/credentials, email addresses, phone numbers, labeled personal names, private account/auth/billing identifiers, Amazon order IDs, raw-row markers, and long unformatted digit runs, and derives the privacy flags;
 - semantic review still excludes novel or obfuscated PII/secrets and raw provider or memory excerpts that deterministic patterns cannot recognize;
-- at least one Action or External Signal; at most four Actions;
+- at least one Action or External Signal; at most four Actions; at most 10 Actions and External Signals combined;
+- every validation pass reports all schema (first 50) and cross-field errors, not only the first;
 - canonical public/private digest content is hash-bound to linked run proof and exact readback; publication atomically rejects proof for older content;
 - pipeline health stays in run record, never masquerades as marketing intelligence.
 

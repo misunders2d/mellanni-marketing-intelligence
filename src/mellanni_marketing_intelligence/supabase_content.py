@@ -316,12 +316,29 @@ def push_digest(
     *,
     publish: bool,
     evidence_packet: dict[str, Any],
+    replace_published: bool = False,
 ) -> dict[str, Any]:
     row = digest_to_row(
         document,
         publish=publish,
         evidence_packet=evidence_packet,
     )
+    existing = _request_json(
+        base_url,
+        key,
+        "digests?select=id,status&slug=eq." + quote(row["slug"], safe=""),
+    )
+    if not isinstance(existing, list):
+        raise RuntimeError("Supabase digest slug lookup did not return a list")
+    if not replace_published and any(
+        isinstance(current, dict) and current.get("status") == "published"
+        for current in existing
+    ):
+        raise ValueError(
+            f"refusing digest write: slug {row['slug']!r} is currently published and "
+            "the write would return it to draft. Use a new slug, or pass "
+            "--replace-published after confirming the published digest should be replaced."
+        )
     payload = {f"p_{field}": value for field, value in row.items()}
     rows = _request_json(
         base_url,
@@ -990,6 +1007,11 @@ def build_parser() -> argparse.ArgumentParser:
     push_parser.add_argument("--evidence-packet", type=Path, required=True)
     push_parser.add_argument("--manifest", type=Path, required=True)
     push_parser.add_argument("--publish", action="store_true")
+    push_parser.add_argument(
+        "--replace-published",
+        action="store_true",
+        help="allow overwriting a currently published digest with the same slug",
+    )
 
     digest_list_parser = subparsers.add_parser("list-digests")
     digest_list_parser.add_argument(
@@ -1188,6 +1210,7 @@ def main(argv: list[str] | None = None) -> int:
             document,
             publish=False,
             evidence_packet=evidence_packet,
+            replace_published=args.replace_published,
         )
         if digest.get("status") != "draft":
             raise RuntimeError("digest write did not return draft status")
