@@ -366,10 +366,15 @@ def list_digests(base_url: str, key: str, *, status: str) -> list[dict[str, Any]
     if not rows:
         return rows
 
+    digest_ids = [
+        str(row["id"]) for row in rows if isinstance(row, dict) and row.get("id")
+    ]
     private_rows = _request_json(
         base_url,
         key,
-        "digest_private_bodies?select=digest_id,private_body",
+        "digest_private_bodies?select=digest_id,private_body&digest_id=in.("
+        + ",".join(quote(digest_id, safe="") for digest_id in digest_ids)
+        + ")",
     )
     if not isinstance(private_rows, list):
         raise RuntimeError("Supabase private digest bodies response was not a list")

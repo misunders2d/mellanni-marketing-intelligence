@@ -1362,6 +1362,7 @@ class SupabaseContentTests(unittest.TestCase):
 
         self.assertEqual(rows[0]["private_body"], {"actions": ["private"]})
         self.assertIn("digest_private_bodies", request_json.call_args_list[1].args[2])
+        self.assertIn("digest_id=in.(digest-id)", request_json.call_args_list[1].args[2])
 
     @patch("mellanni_marketing_intelligence.supabase_content._request_json")
     def test_list_digests_rejects_missing_private_body(self, request_json) -> None:

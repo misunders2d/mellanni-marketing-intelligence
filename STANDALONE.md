@@ -28,7 +28,7 @@ In standalone mode, everything runs locally on disk:
 [Python Collector] (python -m mellanni_marketing_intelligence)
        │
        ▼
-[Local Journal] (journal/<run_id>/manifest.json + *.md source extracts)
+[Local Journal] (/tmp/mellanni-marketing-journal/<run_id>/manifest.json + *.md source extracts)
        │
        ├─── [YouTube Helper] (scripts/youtube-summary.mjs via GOOGLE_API_KEY)
        │
@@ -135,10 +135,7 @@ Using `uv` (recommended):
 UV_CACHE_DIR=/tmp/uv-cache uv sync --locked
 ```
 
-Or using standard `pip`:
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv sync --locked
-```
+Repository policy requires the locked `uv` environment; do not install with bare system `pip` or `python`.
 
 ### Step 2: Run Offline Fixture Collection
 Fetch the last 8 days of content from the checked-in fixture configuration:
@@ -151,29 +148,29 @@ Target specific sources while debugging:
 UV_CACHE_DIR=/tmp/uv-cache uv run python -m mellanni_marketing_intelligence --source marketplace-pulse --source amazon-ads-news
 ```
 
-Output is written to `journal/<run_id>/`:
-- `journal/<run_id>/manifest.json` — Immutable manifest v3 with source status, item metadata, and SHA-256 for every collected artifact.
-- `journal/<run_id>/items/<source_slug>/<item_hash>.md` — Private `0600` Markdown extracts of untrusted external articles/episodes.
+Output is written to `/tmp/mellanni-marketing-journal/<run_id>/`:
+- `/tmp/mellanni-marketing-journal/<run_id>/manifest.json` — Immutable manifest v3 with source status, item metadata, and SHA-256 for every collected artifact.
+- `/tmp/mellanni-marketing-journal/<run_id>/items/<source_slug>/<item_hash>.md` — Private `0600` Markdown extracts of untrusted external articles/episodes.
 
 ### Step 3: Summarize Every YouTube Video
 When the manifest contains YouTube items, run the Gemini 3.8 Flash agentic video summarizer across the full manifest. The command writes one JSON and Markdown artifact per video and exits nonzero if any video fails:
 ```bash
 node --env-file=.env scripts/youtube-summary.mjs \
-  --manifest journal/RUN_ID/manifest.json
+  --manifest /tmp/mellanni-marketing-journal/RUN_ID/manifest.json
 
 # Optional focus:
 node --env-file=.env scripts/youtube-summary.mjs \
-  --manifest journal/RUN_ID/manifest.json \
+  --manifest /tmp/mellanni-marketing-journal/RUN_ID/manifest.json \
   --focus "FOCUS QUESTION"
 ```
 
-Output stays under `journal/RUN_ID/youtube/`. Helper leaves `manifest.json` immutable and writes a run/hash-bound sidecar plus atomic per-episode Markdown and JSON artifacts, each with its own SHA-256. Require `expected == succeeded` and `failed == 0` before synthesis. Review every episode separately; never substitute one representative video or collapse week into one sentence. In evidence packet, record one included/excluded `itemReviews` decision for every manifest item.
+Output stays under `/tmp/mellanni-marketing-journal/RUN_ID/youtube/`. Helper leaves `manifest.json` immutable and writes a run/hash-bound sidecar plus atomic per-episode Markdown and JSON artifacts, each with its own SHA-256. Require `expected == succeeded` and `failed == 0` before synthesis. Review every episode separately; never substitute one representative video or collapse week into one sentence. In evidence packet, record one included/excluded `itemReviews` decision for every manifest item.
 
 ---
 
 ## 6. Agent Synthesis & Editorial Rules
 
-When an AI agent analyzes the collected articles and notes in `journal/<run_id>/`, it must synthesize findings following this editorial framework:
+When an AI agent analyzes the collected articles and notes in `/tmp/mellanni-marketing-journal/<run_id>/`, it must synthesize findings following this editorial framework:
 
 ### Two Core Item Types:
 
@@ -205,6 +202,14 @@ Write your synthesized digest to a Markdown file (e.g., `digest.md`), then run:
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run python scripts/generate_html_report.py digest.md -o report.html --title "Weekly Ecommerce Intelligence Digest"
 ```
+
+A schema-v2 digest JSON renders through the same member-visible projection the website uses (Actions, External Signals, sources; private decision detail, query refs, and memory refs are never rendered). It accepts either a `digest.json` input or a stored digest row whose `body` is the projected object:
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv run python scripts/generate_html_report.py digest.json -o report.html
+```
+
+Write `report.html` to a temporary directory; it is a run artifact, not a repository file.
 
 ### Option B: HTML Report Template Structure
 The resulting `report.html` is a single static HTML file with embedded responsive CSS:

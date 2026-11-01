@@ -24,7 +24,7 @@
       },
       "mellanniEvidence": {
         "entityScope": "Illustrative portfolio / ASIN B012345678 / campaign SP-BRAND-042",
-        "conclusion": "Synthetic portfolio evidence shows $1.25M in sales and 31% contribution efficiency over the trailing 28 days, supporting an efficiency-first test.",
+        "conclusion": "Synthetic portfolio evidence shows $1.25M in sales at a 31% contribution margin over the trailing 28 days, supporting a margin-first test.",
         "source": "Mellanni first-party reporting",
         "window": "Trailing 28 days, America/Los_Angeles",
         "grain": "Portfolio and day",
@@ -37,17 +37,17 @@
         "entityIds": [
           "illustrative-private-portfolio"
         ],
-        "baseline": "Illustrative contribution efficiency is 31 percent over the trailing 28 days.",
-        "guidance": "Run one bounded growth test inside the measured portfolio guardrail.",
-        "kpi": "Contribution efficiency and qualified demand",
-        "successCondition": "Promote the test if contribution efficiency improves to 26 percent or better while qualified demand stays within 5 percent of baseline.",
-        "stopCondition": "Stop if contribution efficiency reaches 34 percent or inventory coverage falls below 21 days."
+        "baseline": "Illustrative contribution margin is 31 percent over the trailing 28 days; higher is better.",
+        "guidance": "Run one bounded growth test that keeps the measured portfolio contribution margin at or above its floor.",
+        "kpi": "Contribution margin (higher is better) and qualified demand",
+        "successCondition": "Promote the test if contribution margin stays at 31 percent or higher while qualified demand grows at least 5 percent over baseline.",
+        "stopCondition": "Stop if contribution margin falls below 28 percent or inventory coverage falls below 21 days."
       },
-      "guidance": "Run one bounded channel test while keeping contribution efficiency at 31% or better.",
+      "guidance": "Run one bounded channel test while keeping contribution margin at 31% or higher.",
       "timebox": "Two weekly review cycles",
-      "kpi": "Contribution efficiency and qualified demand",
-      "successCondition": "Promote if contribution efficiency reaches 26% or better while qualified demand stays within 5% of baseline.",
-      "stopCondition": "Stop if contribution efficiency reaches 34% or inventory coverage falls below 21 days.",
+      "kpi": "Contribution margin (higher is better) and qualified demand",
+      "successCondition": "Promote if contribution margin stays at 31% or higher while qualified demand grows at least 5% over baseline.",
+      "stopCondition": "Stop if contribution margin falls below 28% or inventory coverage falls below 21 days.",
       "confidence": "medium",
       "limitations": [
         "All checked-in metrics and identifiers are synthetic."

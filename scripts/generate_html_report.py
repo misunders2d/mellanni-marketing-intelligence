@@ -331,6 +331,103 @@ def format_inline(text: str) -> str:
     return text
 
 
+def _member_visible_body(data: dict) -> tuple[str, str, dict]:
+    """Return title, summary, and the member-visible body for digest JSON.
+
+    Digest input is projected exactly as the website stores it, so private
+    decision detail and private query/memory references never render.
+    """
+    if data.get("schemaVersion") == 2 and "actions" in data and "signals" in data:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+        from mellanni_marketing_intelligence.editorial import public_digest_body
+
+        return str(data.get("title", "")), str(data.get("summary", "")), public_digest_body(data)
+    body = data.get("body")
+    if isinstance(body, dict) and body.get("schemaVersion") == 2:
+        return str(data.get("title", "")), str(data.get("summary", "")), body
+    raise ValueError(
+        "JSON input must be a schema-v2 digest or a stored digest row with a schema-v2 body"
+    )
+
+
+def _one_line(value: object) -> str:
+    return " ".join(str(value or "").split())
+
+
+def digest_json_to_markdown(data: dict) -> tuple[str, str]:
+    title, summary, body = _member_visible_body(data)
+    sources = {
+        source.get("id"): source for source in body.get("sources") or [] if isinstance(source, dict)
+    }
+
+    def source_links(ids: list[str]) -> str:
+        links = [
+            f"[{_one_line(sources[source_id].get('name'))}]({sources[source_id].get('url')})"
+            for source_id in ids
+            if source_id in sources
+        ]
+        return ", ".join(links)
+
+    def memory_line(finding: dict) -> list[str]:
+        memory = finding.get("memory") or {}
+        if memory.get("outcome") in {"contradicts", "extends"}:
+            label = "Contradicts prior memory" if memory["outcome"] == "contradicts" else "Extends prior memory"
+            return [f"**{label}:** {_one_line(memory.get('comparison'))}", ""]
+        return []
+
+    lines = [f"# {_one_line(title)}", "", _one_line(summary), ""]
+    actions = body.get("actions") or []
+    signals = body.get("signals") or []
+    if actions:
+        lines += ["## Mellanni actions", ""]
+    for action in actions:
+        evidence = action.get("mellanniEvidence") or {}
+        lines += [
+            f"### [ACTION] {_one_line(action.get('title'))}",
+            "",
+            f"**Guidance:** {_one_line(action.get('guidance'))}",
+            "",
+            f"**KPI:** {_one_line(action.get('kpi'))} · **Timebox:** {_one_line(action.get('timebox'))} · **Confidence:** {_one_line(action.get('confidence'))}",
+            "",
+            f"**Success:** {_one_line(action.get('successCondition'))}",
+            "",
+            f"**Stop:** {_one_line(action.get('stopCondition'))}",
+            "",
+            f"**Mellanni evidence:** {_one_line(evidence.get('conclusion'))} ({_one_line(evidence.get('entityScope'))}; {_one_line(evidence.get('window'))})",
+            "",
+            f"**External signal:** {_one_line(action.get('externalSignal'))}",
+            "",
+            *memory_line(action),
+        ]
+        limitations = [item for item in action.get("limitations") or [] if item]
+        if limitations:
+            lines += ["**Limitations:**", *(f"- {_one_line(item)}" for item in limitations), ""]
+        lines += [f"**Sources:** {source_links(action.get('sourceIds') or [])}", ""]
+    if signals:
+        lines += ["## External signals", ""]
+    for signal in signals:
+        lines += [
+            f"### [SIGNAL] {_one_line(signal.get('title'))}",
+            "",
+            _one_line(signal.get("externalSignal")),
+            "",
+            f"**Why it matters:** {_one_line(signal.get('whyItMatters'))}",
+            "",
+            f"**Next validation:** {_one_line(signal.get('nextValidation'))}",
+            "",
+            *memory_line(signal),
+            f"**Sources:** {source_links(signal.get('sourceIds') or [])}",
+            "",
+        ]
+    if sources:
+        lines += ["## Sources", ""]
+        lines += [
+            f"- [{_one_line(source.get('name'))}]({source.get('url')}) — {_one_line(source.get('note'))}"
+            for source in sources.values()
+        ]
+    return title, "\n".join(lines) + "\n"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Convert Markdown intelligence digest to standalone HTML")
     parser.add_argument("input", type=Path, help="Input Markdown (.md) or JSON file")
@@ -347,15 +444,16 @@ def main() -> int:
     if args.input.suffix.lower() == ".json":
         try:
             data = json.loads(content_raw)
-            title = data.get("title", args.title)
-            body = data.get("body", "")
-            if isinstance(body, dict):
-                body_md = json.dumps(body, indent=2)
-            else:
-                body_md = str(body)
+            if not isinstance(data, dict):
+                raise ValueError("JSON input must be an object")
+            title, body_md = digest_json_to_markdown(data)
+            title = title or args.title
             html_content = markdown_to_html_simple(body_md)
         except json.JSONDecodeError:
             print("Error: Invalid JSON input", file=sys.stderr)
+            return 1
+        except (KeyError, TypeError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
             return 1
     else:
         title = args.title
