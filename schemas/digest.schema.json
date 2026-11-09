@@ -19,7 +19,7 @@
     "schemaVersion": { "const": 2 },
     "slug": { "$ref": "#/$defs/slug" },
     "date": { "type": "string", "format": "date" },
-    "title": { "$ref": "#/$defs/nonEmpty" },
+    "title": { "$ref": "#/$defs/nonEmpty", "maxLength": 80 },
     "summary": { "$ref": "#/$defs/nonEmpty" },
     "topics": {
       "type": "array",

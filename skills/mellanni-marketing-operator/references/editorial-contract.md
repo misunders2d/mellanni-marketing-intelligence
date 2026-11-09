@@ -27,6 +27,8 @@ Evidence packet must bind to exact immutable collection bytes through `collectio
 
 Every Signal's source IDs must exactly match included item reviews naming that Signal. Missing, extra, duplicate, or foreign reviews fail validation. This ledger proves review coverage; it does not make weak source interpretation reliable. Human synthesis must still verify each claim against untrusted collected text and each video artifact.
 
+Digest title: at most 80 characters (validation enforces it). Name the one or two most important findings; no "Weekly Marketing Intelligence:" prefix, because the page already labels the issue.
+
 ## Two employee-visible item types
 
 ### Mellanni Action
